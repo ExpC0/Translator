@@ -28,10 +28,14 @@ const els = {
   voice:         $('voice'),
   audioSource:   $('audio-source'),
   audioHint:     $('audio-source-hint'),
+  modeSelect:    $('mode-select'),
+  dirSelect:     $('dir-select'),
+  dirField:      $('dir-field'),
   btnSwap:       $('btn-swap'),
   btnStart:      $('btn-start'),
   btnStop:       $('btn-stop'),
   btnHush:       $('btn-hush'),
+  btnPause:      $('btn-pause'),
   btnClear:      $('btn-clear'),
   btnMenu:       $('btn-menu'),
   btnLog:        $('btn-log'),
@@ -57,6 +61,7 @@ const els = {
 
 const state = {
   running: false,
+  paused: false,
   client: null,
   capture: null,
   player: null,
@@ -80,6 +85,8 @@ function savePrefs() {
       target: els.langTarget.value,
       voice:  els.voice.value,
       audio:  els.audioSource.value,
+      mode:   els.modeSelect.value,
+      dir:    els.dirSelect.value,
       promptTemplate: state.systemPromptTemplate || '',
     }));
   } catch (_) {}
@@ -88,6 +95,40 @@ function savePrefs() {
 function langName(code) {
   for (const [c, n] of LANGUAGES) if (c === code) return n;
   return code;
+}
+
+// ─── System prompt resolution ────────────────────────────────────────────────
+// One custom slot. Mode/Direction supply defaults. A saved template that
+// matches any built-in template is treated as "not customised" so users can
+// switch modes without their old default-text overriding the new default.
+function isBuiltinPromptTemplate(t) {
+  return t === GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE ||
+         t === GeminiLive.ONE_WAY_SYSTEM_PROMPT_TEMPLATE ||
+         t === GeminiLive.TRANSCRIBE_SYSTEM_PROMPT_TEMPLATE;
+}
+
+function modeDefaultTemplate() {
+  if (els.modeSelect.value === 'transcribe') return GeminiLive.TRANSCRIBE_SYSTEM_PROMPT_TEMPLATE;
+  if (els.dirSelect.value === 'oneway')      return GeminiLive.ONE_WAY_SYSTEM_PROMPT_TEMPLATE;
+  return GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE;
+}
+
+function effectivePromptTemplate() {
+  const custom = state.systemPromptTemplate;
+  if (custom && !isBuiltinPromptTemplate(custom)) return custom;
+  return modeDefaultTemplate();
+}
+
+function modeDescriptiveLabel() {
+  const mode = els.modeSelect.value;
+  if (mode === 'transcribe') return 'Transcribe only';
+  const dirLabel = els.dirSelect.value === 'oneway' ? 'one-way →' : 'both ways ↔';
+  const fmt = mode === 'text' ? 'text only' : 'voice + text';
+  return `Translate (${fmt}, ${dirLabel})`;
+}
+
+function updateDirVisibility() {
+  els.dirField.style.display = els.modeSelect.value === 'transcribe' ? 'none' : '';
 }
 
 function fillLanguages() {
@@ -108,11 +149,15 @@ function fillLanguages() {
   els.langTarget.value  = prefs.target || 'es';
   els.voice.value       = prefs.voice  || 'Zephyr';
   els.audioSource.value = prefs.audio  || 'mic';
-  state.systemPromptTemplate = prefs.promptTemplate || GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE;
+  els.modeSelect.value  = prefs.mode   || 'audio';
+  els.dirSelect.value   = prefs.dir    || 'bidir';
+  state.systemPromptTemplate = prefs.promptTemplate || null;
 
   if (els.langSource.value === els.langTarget.value) {
     els.langTarget.value = els.langSource.value === 'en' ? 'es' : 'en';
   }
+
+  updateDirVisibility();
 
   // Disable display-capture options on browsers that lack the API (mostly mobile).
   if (!LiveAudio.canCaptureDisplayAudio()) {
@@ -189,15 +234,17 @@ function flushPending() {
     if (state.pip) state.pip.setInput(t.inputText);
   }
   if (pendingOutput) {
-    if (t.outputText === '') {
-      t.outputEl.classList.remove('empty');
-      t.outputEl.firstChild.nodeValue = '';
-      t.outputCaret.style.display = '';
+    if (t.outputEl) {
+      if (t.outputText === '') {
+        t.outputEl.classList.remove('empty');
+        t.outputEl.firstChild.nodeValue = '';
+        if (t.outputCaret) t.outputCaret.style.display = '';
+      }
+      t.outputText += pendingOutput;
+      t.outputEl.firstChild.nodeValue = t.outputText;
+      if (state.pip) state.pip.setOutput(t.outputText);
     }
-    t.outputText += pendingOutput;
-    t.outputEl.firstChild.nodeValue = t.outputText;
     pendingOutput = '';
-    if (state.pip) state.pip.setOutput(t.outputText);
   }
   els.turns.scrollTop = els.turns.scrollHeight;
 }
@@ -206,8 +253,10 @@ function ensureLiveTurn() {
   if (state.liveTurn) return state.liveTurn;
   if (els.emptyState) { els.emptyState.remove(); els.emptyState = null; }
 
+  const isTranscribe = els.modeSelect.value === 'transcribe';
+
   const root = document.createElement('div');
-  root.className = 'turn live';
+  root.className = 'turn live' + (isTranscribe ? ' turn-single' : '');
 
   const inRow = document.createElement('div');
   inRow.className = 'turn-row input';
@@ -217,24 +266,28 @@ function ensureLiveTurn() {
   const inText = document.createElement('span');
   inText.className = 'turn-text empty';
   inText.appendChild(document.createTextNode('listening…'));
-  inRow.appendChild(inLab); inRow.appendChild(inText);
-
-  const outRow = document.createElement('div');
-  outRow.className = 'turn-row output';
-  const outLab = document.createElement('span');
-  outLab.className = 'turn-label';
-  outLab.textContent = '→ ' + langName(els.langTarget.value);
-  const outText = document.createElement('span');
-  outText.className = 'turn-text empty';
-  outText.appendChild(document.createTextNode('…'));
-  outRow.appendChild(outLab); outRow.appendChild(outText);
-
   const inCaret = document.createElement('span'); inCaret.className = 'caret'; inCaret.style.display = 'none';
   inText.appendChild(inCaret);
-  const outCaret = document.createElement('span'); outCaret.className = 'caret'; outCaret.style.display = 'none';
-  outText.appendChild(outCaret);
+  inRow.appendChild(inLab); inRow.appendChild(inText);
 
-  root.appendChild(inRow); root.appendChild(outRow);
+  let outText = null, outCaret = null;
+  if (!isTranscribe) {
+    const outRow = document.createElement('div');
+    outRow.className = 'turn-row output';
+    const outLab = document.createElement('span');
+    outLab.className = 'turn-label';
+    outLab.textContent = '→ ' + langName(els.langTarget.value);
+    outText = document.createElement('span');
+    outText.className = 'turn-text empty';
+    outText.appendChild(document.createTextNode('…'));
+    outCaret = document.createElement('span'); outCaret.className = 'caret'; outCaret.style.display = 'none';
+    outText.appendChild(outCaret);
+    outRow.appendChild(outLab); outRow.appendChild(outText);
+    root.appendChild(inRow); root.appendChild(outRow);
+  } else {
+    root.appendChild(inRow);
+  }
+
   els.turns.appendChild(root);
 
   while (els.turns.children.length > MAX_TURNS) {
@@ -267,9 +320,9 @@ function finalizeTurn() {
   if (!state.liveTurn) return;
   const t = state.liveTurn;
   t.inputCaret.remove();
-  t.outputCaret.remove();
+  if (t.outputCaret) t.outputCaret.remove();
   if (!t.inputText.trim())  { t.inputEl.classList.add('empty');  t.inputEl.firstChild.nodeValue = '(silence)'; }
-  if (!t.outputText.trim()) { t.outputEl.classList.add('empty'); t.outputEl.firstChild.nodeValue = '(no translation)'; }
+  if (t.outputEl && !t.outputText.trim()) { t.outputEl.classList.add('empty'); t.outputEl.firstChild.nodeValue = '(no translation)'; }
   t.root.classList.remove('live');
   state.liveTurn = null;
 }
@@ -297,35 +350,45 @@ async function startPipeline() {
   }
   savePrefs();
 
+  const translationMode = els.modeSelect.value; // 'audio' | 'text' | 'transcribe'
+  const dir = els.dirSelect.value;               // 'bidir' | 'oneway'
+  const isAudio = translationMode === 'audio';
+  const responseModalities = isAudio ? ['AUDIO'] : ['TEXT'];
+
   setStatus('connecting');
   els.btnStart.disabled = true;
   els.btnStop.disabled  = false;
-  els.btnHush.disabled  = false;
+  els.btnHush.disabled  = !isAudio;
   setControlsLocked(true);
 
-  state.player = new LiveAudio.TTSPlayer({
-    onLevel: (l) => setMeter(els.outMeter, l),
-    onActiveChange: (active) => {
-      const s = state.client && state.client.state;
-      if (s === 'connected') setStatus(active ? 'translating' : 'connected');
-    },
-  });
+  if (isAudio) {
+    state.player = new LiveAudio.TTSPlayer({
+      onLevel: (l) => setMeter(els.outMeter, l),
+      onActiveChange: (active) => {
+        const s = state.client && state.client.state;
+        if (s === 'connected') setStatus(active ? 'translating' : 'connected');
+      },
+    });
+  } else {
+    state.player = null;
+  }
 
   const systemInstruction = GeminiLive.renderSystemPrompt(
-    state.systemPromptTemplate || GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE,
-    langName(src), langName(tgt));
+    effectivePromptTemplate(), langName(src), langName(tgt));
 
   state.client = new GeminiLive.GeminiLiveClient({
     apiKey,
     voice: els.voice.value,
     systemInstruction,
-    onAudio: (b64) => { state.player.playChunk(b64); },
+    responseModalities,
+    useOutputTranscription: isAudio,
+    onAudio: isAudio ? (b64) => { state.player.playChunk(b64); } : () => {},
     onInputChunk: appendInput,
-    onOutputChunk: appendOutput,
+    onOutputChunk: translationMode !== 'transcribe' ? appendOutput : () => {},
     onTurnComplete: finalizeTurn,
     onState: (s) => {
       if (s === 'connected') {
-        setStatus(state.player && state.player.isActive() ? 'translating' : 'connected');
+        setStatus(isAudio && state.player && state.player.isActive() ? 'translating' : 'connected');
       } else {
         setStatus(s);
       }
@@ -334,19 +397,20 @@ async function startPipeline() {
   });
 
   try {
-    // Init the TTS context inside the user gesture — Safari requires this.
-    await state.player.ensureCtx();
+    if (isAudio) await state.player.ensureCtx();
     state.capture = new LiveAudio.AudioCapture({
-      onChunk: (buf) => state.client.sendAudio(buf),
+      onChunk: (buf) => {
+        if (!state.paused) state.client.sendAudio(buf);
+      },
       onLevel: (l) => setMeter(els.micMeter, l),
       onDisplayEnded: () => {
         log('warn', 'App audio share ended by the browser.');
         stopPipeline();
       },
     });
-    const mode = els.audioSource.value || 'mic';
-    await state.capture.start({ mode });
-    log('info', 'Audio source: ' + ({mic:'microphone', display:'app audio', both:'mic + app audio'}[mode] || mode));
+    const audioMode = els.audioSource.value || 'mic';
+    await state.capture.start({ mode: audioMode });
+    log('info', 'Audio source: ' + ({mic:'microphone', display:'app audio', both:'mic + app audio'}[audioMode] || audioMode));
   } catch (e) {
     log('error', 'Audio error: ' + (e && e.message ? e.message : e));
     await stopPipeline();
@@ -355,12 +419,20 @@ async function startPipeline() {
 
   state.client.start();
   state.running = true;
+  state.paused = false;
+  els.btnPause.disabled = false;
+  els.btnPause.classList.remove('is-paused');
+  els.btnPause.title = 'Pause mic';
+
   state.startedAt = Date.now();
   if (state.ageTimer) clearInterval(state.ageTimer);
   state.ageTimer = setInterval(() => {
     els.sessionAge.textContent = fmtDuration(Date.now() - state.startedAt);
   }, 1000);
-  log('info', `Session started: ${langName(src)} ⇄ ${langName(tgt)}`);
+
+  const dirLabel = dir === 'oneway' ? '→' : '⇄';
+  const modeLabel = translationMode !== 'audio' ? ` (${translationMode === 'text' ? 'text only' : 'transcribe'})` : '';
+  log('info', `Session started: ${langName(src)} ${dirLabel} ${langName(tgt)}${modeLabel}`);
 }
 
 async function stopPipeline() {
@@ -371,6 +443,7 @@ async function stopPipeline() {
   state.capture = null;
   state.player = null;
   state.running = false;
+  state.paused = false;
   if (state.ageTimer) { clearInterval(state.ageTimer); state.ageTimer = 0; }
   finalizeTurn();
   setStatus('idle');
@@ -378,18 +451,32 @@ async function stopPipeline() {
   els.btnStart.disabled = false;
   els.btnStop.disabled  = true;
   els.btnHush.disabled  = true;
+  els.btnPause.disabled = true;
+  els.btnPause.classList.remove('is-paused');
+  els.btnPause.title = 'Pause mic';
   els.sessionAge.textContent = '00:00';
   setMeter(els.micMeter, 0);
   setMeter(els.outMeter, 0);
 }
 
 function setControlsLocked(locked) {
-  els.langSource.disabled = locked;
-  els.langTarget.disabled = locked;
-  els.voice.disabled      = locked;
-  els.audioSource.disabled= locked;
-  els.apiKey.disabled     = locked;
-  els.btnSwap.disabled    = locked;
+  els.langSource.disabled    = locked;
+  els.langTarget.disabled    = locked;
+  els.voice.disabled         = locked;
+  els.audioSource.disabled   = locked;
+  els.apiKey.disabled        = locked;
+  els.btnSwap.disabled       = locked;
+  els.modeSelect.disabled    = locked;
+  els.dirSelect.disabled     = locked;
+}
+
+function togglePause() {
+  if (!state.running) return;
+  state.paused = !state.paused;
+  els.btnPause.classList.toggle('is-paused', state.paused);
+  els.btnPause.title = state.paused ? 'Resume mic' : 'Pause mic';
+  if (state.paused && state.player) state.player.hush();
+  log('info', state.paused ? 'Mic paused.' : 'Mic resumed.');
 }
 
 // ─── Sheets ──────────────────────────────────────────────────────────────────
@@ -408,8 +495,16 @@ function clearConversation() {
   const empty = document.createElement('div');
   empty.className = 'empty-state';
   empty.id = 'empty-state';
-  empty.innerHTML = '<div class="empty-icon" aria-hidden="true">🎙️</div>' +
-                    '<p>Press <strong>Start</strong> and speak.</p>';
+  empty.innerHTML =
+    '<div class="empty-icon" aria-hidden="true">' +
+      '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">' +
+        '<path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>' +
+        '<path d="M19 10v2a7 7 0 0 1-14 0v-2"/>' +
+        '<line x1="12" y1="19" x2="12" y2="23"/>' +
+        '<line x1="8" y1="23" x2="16" y2="23"/>' +
+      '</svg>' +
+    '</div>' +
+    '<p>Press <strong>Start</strong> and speak.</p>';
   els.turns.appendChild(empty);
   els.emptyState = empty;
   if (state.pip) { state.pip.setInput(''); state.pip.setOutput(''); }
@@ -417,20 +512,24 @@ function clearConversation() {
 
 // ─── System prompt editor ────────────────────────────────────────────────────
 function openPromptEditor() {
-  els.promptText.value = state.systemPromptTemplate || GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE;
+  els.promptText.value = effectivePromptTemplate();
+  const lab = document.getElementById('prompt-mode-label');
+  if (lab) lab.textContent = modeDescriptiveLabel();
   openSheet('prompt-sheet');
 }
 function savePromptEditor() {
   const v = els.promptText.value.trim();
-  state.systemPromptTemplate = v || GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE;
+  // Treat empty or any built-in template as "no custom" — the resolver will
+  // pick the right default for whichever mode the user is in.
+  state.systemPromptTemplate = (v && !isBuiltinPromptTemplate(v)) ? v : null;
   savePrefs();
   closeSheet('prompt-sheet');
-  log('info', state.systemPromptTemplate === GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE
-        ? 'System prompt reset to default.'
-        : 'System prompt updated (takes effect on next Start).');
+  log('info', state.systemPromptTemplate
+        ? 'System prompt updated (takes effect on next Start).'
+        : 'System prompt reset — using default for the current mode.');
 }
 function resetPromptEditor() {
-  els.promptText.value = GeminiLive.DEFAULT_SYSTEM_PROMPT_TEMPLATE;
+  els.promptText.value = modeDefaultTemplate();
 }
 
 // ─── Picture-in-Picture ──────────────────────────────────────────────────────
@@ -637,6 +736,7 @@ async function togglePip() {
 function wireUI() {
   els.btnStart.addEventListener('click', startPipeline);
   els.btnStop.addEventListener('click', stopPipeline);
+  els.btnPause.addEventListener('click', togglePause);
   els.btnHush.addEventListener('click', () => {
     if (state.player) state.player.hush();
     log('info', 'Playback hushed');
@@ -651,7 +751,11 @@ function wireUI() {
   els.btnShowKey.addEventListener('click', () => {
     els.apiKey.type = els.apiKey.type === 'password' ? 'text' : 'password';
   });
-  for (const sel of [els.langSource, els.langTarget, els.voice, els.audioSource]) {
+  els.modeSelect.addEventListener('change', () => {
+    updateDirVisibility();
+    savePrefs();
+  });
+  for (const sel of [els.langSource, els.langTarget, els.voice, els.audioSource, els.dirSelect]) {
     sel.addEventListener('change', savePrefs);
   }
   els.apiKey.addEventListener('change', savePrefs);

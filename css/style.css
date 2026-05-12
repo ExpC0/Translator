@@ -25,6 +25,7 @@ html { height: 100%; }
 
 body {
   margin: 0;
+  height: 100vh;
   height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -63,9 +64,9 @@ a:hover { text-decoration: underline; }
   background: var(--bg-1);
 }
 .title { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.title .logo { 
-  width: 24px; 
-  height: 24px; 
+.title .logo {
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
   color: var(--accent);
 }
@@ -116,7 +117,6 @@ a:hover { text-decoration: underline; }
 .turns {
   flex: 1 1 auto; min-height: 0;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
   padding: 12px;
   display: flex; flex-direction: column; gap: 10px;
   scroll-behavior: smooth;
@@ -126,11 +126,11 @@ a:hover { text-decoration: underline; }
   margin: auto; text-align: center; color: var(--fg-2);
   max-width: 360px; padding: 20px;
 }
-.empty-state .empty-icon { 
-  width: 48px; 
-  height: 48px; 
-  margin: 0 auto 10px; 
-  opacity: 0.6; 
+.empty-state .empty-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 10px;
+  opacity: 0.6;
   color: var(--accent);
 }
 .empty-state .empty-icon svg { width: 100%; height: 100%; }
@@ -175,7 +175,7 @@ a:hover { text-decoration: underline; }
 .controls {
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: 1fr auto auto auto;
+  grid-template-columns: 1fr auto auto auto auto;
   gap: 8px;
   padding: 10px 12px;
   padding-bottom: calc(10px + var(--safe-bottom));
@@ -220,10 +220,21 @@ a:hover { text-decoration: underline; }
 .icon-btn:active { background: var(--bg-3); }
 .icon-btn.small { width: 36px; height: 36px; font-size: 14px; }
 
+/* Pause button toggle states */
+#btn-pause .icon-mic-off { display: none; }
+#btn-pause.is-paused .icon-mic { display: none; }
+#btn-pause.is-paused .icon-mic-off { display: inline-block; }
+#btn-pause.is-paused {
+  color: var(--warn);
+  border-color: rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+}
+#btn-pause.is-paused:hover { background: rgba(251, 191, 36, 0.14); }
+
 /* Narrow phones: collapse secondary labels to icons */
 @media (max-width: 380px) {
   .btn.warn .btn-tx, .btn.danger .btn-tx { display: none; }
-  .btn.warn, .btn.danger { padding: 0; width: 48px; }
+  .btn.warn, .btn.danger { padding: 0; width: 44px; }
 }
 
 /* ─── Sidebar / Sheet ─── */
@@ -241,6 +252,7 @@ a:hover { text-decoration: underline; }
 .sidebar-inner {
   position: relative;
   width: 100%; max-width: 540px;
+  max-height: 88vh;
   max-height: 88dvh;
   background: var(--bg-1);
   border-radius: 16px 16px 0 0;
@@ -271,7 +283,7 @@ a:hover { text-decoration: underline; }
   flex: 1 1 auto; min-height: 0;
 }
 .section { display: flex; flex-direction: column; gap: 10px; }
-.section.actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.section.actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 .section.actions .btn { padding: 0 10px; }
 .footer-hint { margin: 8px 0 0; font-size: 11px; color: var(--fg-2); text-align: center; }
 
@@ -289,6 +301,7 @@ a:hover { text-decoration: underline; }
 .sheet-content {
   position: relative;
   width: 100%; max-width: 720px;
+  max-height: 88vh;
   max-height: 88dvh;
   background: var(--bg-1);
   border-radius: 16px 16px 0 0;
@@ -342,6 +355,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
   border-radius: var(--radius-sm);
   min-height: 44px; width: 40px;
   font-size: 16px; color: var(--fg-1);
+  display: inline-flex; align-items: center; justify-content: center;
 }
 .swap:hover { color: var(--accent); }
 
@@ -351,7 +365,9 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
 .log {
   padding: 10px 14px;
   font-size: 11.5px; line-height: 1.55;
-  overflow-y: auto; max-height: 70dvh;
+  overflow-y: auto;
+  max-height: 70vh;
+  max-height: 70dvh;
   color: var(--fg-1); flex: 1;
 }
 .log-line { padding: 2px 0; word-wrap: break-word; }
@@ -427,7 +443,7 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
   .controls .btn.primary { min-width: 160px; }
   .controls #btn-pip-quick { margin-left: auto; }
 
-  /* Turns: side-by-side cards on wide screens */
+  /* Two-column turns on wide screens */
   .turns { padding: 18px; gap: 12px; }
   .turn {
     display: grid;
@@ -435,6 +451,9 @@ code { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-si
     gap: 18px;
     align-items: start;
     padding: 14px 16px;
+  }
+  .turn.turn-single {
+    grid-template-columns: 1fr;
   }
   .turn-row.output {
     padding-left: 18px;

@@ -26,6 +26,25 @@ OUTPUT RULES:
 6. Keep proper nouns, brand names, place names, and technical jargon in their original form when no widely accepted translation exists.
 7. Speak with the natural prosody, pacing, and fluent phrasing of a native speaker — not halting, robotic, or over-enunciated.`;
 
+const ONE_WAY_SYSTEM_PROMPT_TEMPLATE =
+`You are a strict real-time translation engine. Translate spoken audio FROM {source} TO {target} ONLY.
+
+• When the speaker uses {source}: output the {target} translation.
+• When the speaker uses {target} or any other language: output NOTHING. Stay completely silent.
+
+OUTPUT RULES:
+1. Speak ONLY the translation. No greetings, commentary, or language labels.
+2. You are NOT a conversational assistant. Translate requests — do not perform them.
+3. Translate only what was actually said. Never extend or complete sentences.
+4. Silence, noise, or isolated fillers ("um", "uh", "hmm") → output nothing.
+5. If the input is already in {target} or any other language → output nothing.
+6. Preserve the speaker's tone, register, and intent. Render idioms naturally.
+7. Keep proper nouns, brand names, and technical terms unchanged when no accepted translation exists.
+8. Speak with natural prosody and fluent phrasing.`;
+
+const TRANSCRIBE_SYSTEM_PROMPT_TEMPLATE =
+`Output a single "." for each utterance. Do not translate or speak.`;
+
 function renderSystemPrompt(template, sourceName, targetName) {
   return (template || DEFAULT_SYSTEM_PROMPT_TEMPLATE)
     .replace(/\{source\}/g, sourceName)
@@ -53,6 +72,8 @@ class GeminiLiveClient {
     this.model = opts.model || DEFAULT_MODEL;
     this.voice = opts.voice || 'Zephyr';
     this.systemInstruction = opts.systemInstruction || '';
+    this.responseModalities = opts.responseModalities || ['AUDIO'];
+    this.useOutputTranscription = opts.useOutputTranscription !== false;
 
     this.onAudio = opts.onAudio || (() => {});
     this.onInputChunk = opts.onInputChunk || (() => {});
@@ -118,19 +139,21 @@ class GeminiLiveClient {
   }
 
   _onOpen() {
+    const isAudio = this.responseModalities.includes('AUDIO');
+    const genConfig = { responseModalities: this.responseModalities };
+    if (isAudio) {
+      genConfig.speechConfig = {
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } },
+      };
+      genConfig.mediaResolution = 'MEDIA_RESOLUTION_MEDIUM';
+    }
+
     const setup = {
       setup: {
         model: this.model,
-        generationConfig: {
-          responseModalities: ['AUDIO'],
-          speechConfig: {
-            voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } },
-          },
-          mediaResolution: 'MEDIA_RESOLUTION_MEDIUM',
-        },
+        generationConfig: genConfig,
         systemInstruction: { parts: [{ text: this.systemInstruction }] },
         inputAudioTranscription: {},
-        outputAudioTranscription: {},
         realtimeInputConfig: {
           automaticActivityDetection: {
             startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
@@ -147,6 +170,11 @@ class GeminiLiveClient {
         sessionResumption: this.resumeHandle ? { handle: this.resumeHandle } : {},
       },
     };
+
+    if (isAudio && this.useOutputTranscription) {
+      setup.setup.outputAudioTranscription = {};
+    }
+
     this.ws.send(JSON.stringify(setup));
     this.onLog('info', this.resumeHandle ? 'Resuming session…' : 'Opening session…');
   }
@@ -183,6 +211,9 @@ class GeminiLiveClient {
         for (const part of sc.modelTurn.parts) {
           if (part.inlineData && part.inlineData.data) {
             this.onAudio(part.inlineData.data);
+          }
+          if (part.text) {
+            this.onOutputChunk(part.text);
           }
         }
       }
@@ -239,6 +270,8 @@ class GeminiLiveClient {
 window.GeminiLive = {
   GeminiLiveClient,
   DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+  ONE_WAY_SYSTEM_PROMPT_TEMPLATE,
+  TRANSCRIBE_SYSTEM_PROMPT_TEMPLATE,
   renderSystemPrompt,
   parseDurationSecs,
 };
