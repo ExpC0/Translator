@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1" />
+  <meta name="theme-color" content="#0b0d12" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <title>Live Translator</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+  <header class="topbar">
+    <button id="btn-menu" class="icon-btn menu-btn" title="Settings" aria-label="Settings">☰</button>
+    <div class="title">
+      <span class="logo" aria-hidden="true">🌐</span>
+      <span class="title-text">Translator</span>
+    </div>
+    <div class="status">
+      <span id="session-age" class="age mono" aria-label="Session age">00:00</span>
+      <span id="status-pill" class="pill pill-idle">
+        <span class="dot" aria-hidden="true"></span>
+        <span id="status-text">Idle</span>
+      </span>
+    </div>
+  </header>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-backdrop" data-close="sidebar"></div>
+    <div class="sidebar-inner" role="complementary" aria-label="Settings">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Settings</h2>
+        <button class="icon-btn close-btn" data-close="sidebar" aria-label="Close">×</button>
+      </div>
+      <div class="sheet-body">
+
+        <section class="section">
+          <div class="field">
+            <label for="api-key">Gemini API key</label>
+            <div class="input-row">
+              <input type="password" id="api-key" placeholder="Paste key" autocomplete="off" spellcheck="false" />
+              <button id="btn-show-key" class="icon-btn small" type="button" aria-label="Show or hide key">👁</button>
+            </div>
+            <p class="hint">From <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Stored only in this browser.</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="field-grid">
+            <div class="field">
+              <label for="lang-source">You speak</label>
+              <select id="lang-source"></select>
+            </div>
+            <button id="btn-swap" class="swap" type="button" aria-label="Swap languages">⇄</button>
+            <div class="field">
+              <label for="lang-target">Translate to</label>
+              <select id="lang-target"></select>
+            </div>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="field">
+            <label for="voice">Voice</label>
+            <select id="voice">
+              <option value="Zephyr">Zephyr</option>
+              <option value="Puck">Puck</option>
+              <option value="Charon">Charon</option>
+              <option value="Kore">Kore</option>
+              <option value="Fenrir">Fenrir</option>
+              <option value="Aoede">Aoede</option>
+              <option value="Leda">Leda</option>
+              <option value="Orus">Orus</option>
+            </select>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="field">
+            <label for="audio-source">Audio source</label>
+            <select id="audio-source">
+              <option value="mic">Microphone only</option>
+              <option value="display">App / tab audio only</option>
+              <option value="both">Mic + app audio</option>
+            </select>
+            <p class="hint" id="audio-source-hint">Default microphone. Use “App audio” to translate a tab or window. Browser support varies.</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <button id="btn-edit-prompt" class="btn ghost full" type="button">✎ Customise system prompt</button>
+        </section>
+
+        <section class="section actions">
+          <button id="btn-pip" class="btn ghost" type="button">📺 Pop out</button>
+          <button id="btn-log" class="btn ghost" type="button">≡ Log</button>
+          <button id="btn-clear" class="btn ghost" type="button">⌫ Clear chat</button>
+        </section>
+
+        <p class="footer-hint">Audio &amp; data go directly from this browser to Google. No server in between.</p>
+      </div>
+    </div>
+  </aside>
+
+  <div class="meter-row">
+    <span class="meter-label">MIC</span>
+    <div class="meter"><div class="meter-fill" id="mic-meter"></div></div>
+    <span class="meter-label">OUT</span>
+    <div class="meter"><div class="meter-fill" id="out-meter"></div></div>
+  </div>
+
+  <main class="conv">
+    <div id="turns" class="turns" aria-live="polite">
+      <div class="empty-state" id="empty-state">
+        <div class="empty-icon" aria-hidden="true">🎙️</div>
+        <p>Press <strong>Start</strong> and speak.<br/>Your words appear on one side, the translation on the other.</p>
+        <p class="hint">First, open <button class="link-btn" id="open-settings-from-empty">Settings</button> and paste your Gemini API key.</p>
+      </div>
+    </div>
+  </main>
+
+  <footer class="controls">
+    <button id="btn-start" class="btn primary" type="button">
+      <span class="btn-ic" aria-hidden="true">▶</span><span class="btn-tx">Start</span>
+    </button>
+    <button id="btn-hush" class="btn warn" type="button" disabled title="Cancel current translation">
+      <span class="btn-ic" aria-hidden="true">🤫</span><span class="btn-tx">Hush</span>
+    </button>
+    <button id="btn-stop" class="btn danger" type="button" disabled>
+      <span class="btn-ic" aria-hidden="true">■</span><span class="btn-tx">Stop</span>
+    </button>
+    <button id="btn-pip-quick" class="icon-btn quick" type="button" title="Pop out current translation">📺</button>
+  </footer>
+
+  <!-- System prompt editor sheet -->
+  <div class="sheet" id="prompt-sheet">
+    <div class="sheet-backdrop" data-close="prompt-sheet"></div>
+    <div class="sheet-content" role="dialog" aria-label="System prompt">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>System prompt</h2>
+        <button class="icon-btn close-btn" data-close="prompt-sheet" aria-label="Close">×</button>
+      </div>
+      <div class="sheet-body">
+        <p class="hint">Sent to Gemini at the start of every session. Use <code>{source}</code> and <code>{target}</code> placeholders; they are replaced with the selected language names.</p>
+        <textarea id="prompt-text" rows="14" spellcheck="false"></textarea>
+        <div class="row-end">
+          <button id="btn-reset-prompt" class="btn ghost" type="button">↺ Reset to default</button>
+          <button id="btn-save-prompt" class="btn primary" type="button">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log sheet -->
+  <div class="sheet" id="log-sheet">
+    <div class="sheet-backdrop" data-close="log-sheet"></div>
+    <div class="sheet-content" role="dialog" aria-label="Log">
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Log</h2>
+        <button class="icon-btn close-btn" data-close="log-sheet" aria-label="Close">×</button>
+      </div>
+      <div id="log" class="log mono"></div>
+    </div>
+  </div>
+
+  <script src="js/audio.js"></script>
+  <script src="js/gemini-live.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
