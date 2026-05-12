@@ -1,4 +1,4 @@
-# Live Translator ?
+# Live Translator 🌐
 
 A real-time, bidirectional audio translator powered by Google's Gemini Live API. Translate spoken audio between multiple languages instantly with natural voice output.
 
@@ -70,7 +70,7 @@ live-translator/
    - Copy it
 
 2. **Launch the App**:
-   - Click the ?? **Settings** button (top-left)
+   - Click the ⚙️ **Settings** button (top-left)
    - Paste your API key in the "Gemini API key" field
    - Select your source and target languages
    - Choose a voice from the dropdown
@@ -84,27 +84,27 @@ live-translator/
 1. **Start**: Click the main play button to begin listening and translating
 2. **Speak**: Say something in the source language
 3. **Translate**: The AI listens, translates, and speaks back the translation
-4. **Switch**: Optionally swap source/target languages with the ? swap button
+4. **Switch**: Optionally swap source/target languages with the 🔄 swap button
 5. **Stop**: Click stop when done
 
 ### Advanced Features
 
 #### Pop-Out Window
-- Click the **? Pop out** button to open the translator in a floating window
+- Click the **📺 Pop out** button to open the translator in a floating window
 - Continue translating while working in other tabs
 
 #### Chat Log
-- Click the **? Log** button to view the conversation history
+- Click the **📋 Log** button to view the conversation history
 - See input transcripts, output translations, and timestamps
 - Useful for reviewing translated content
 
 #### Custom System Prompt
-- Click the **?? Customise system prompt** button to modify translation behavior
+- Click the **✏️ Customise system prompt** button to modify translation behavior
 - Edit the template to adjust tone, strictness, or special instructions
 - Default prompt enforces strict translation-only behavior (no commentary or responses)
 
 #### Clear Chat
-- Click the **?? Clear chat** button to reset the conversation history
+- Click the **🗑️ Clear chat** button to reset the conversation history
 - Useful for starting a new session
 
 ## Settings Reference
@@ -121,11 +121,11 @@ live-translator/
 
 | Feature | Chrome/Edge | Firefox | Safari |
 |---------|------------|---------|--------|
-| Microphone input | ? | ? | ? |
-| Display/tab audio | ? | ? | ? |
-| WebSocket (WebAudio) | ? | ? | ? |
-| Web Audio API | ? | ? | ? |
-| AudioWorklet | ? | ? | ?? Limited |
+| Microphone input | ✅ | ✅ | ✅ |
+| Display/tab audio | ✅ | ❌ | ❌ |
+| WebSocket (WebAudio) | ✅ | ✅ | ✅ |
+| Web Audio API | ✅ | ✅ | ✅ |
+| AudioWorklet | ✅ | ✅ | ⚠️ Limited |
 
 *Display audio capture requires Chromium-based browsers (Chrome, Edge, Brave, etc.)*
 
