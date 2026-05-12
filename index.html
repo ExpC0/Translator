@@ -14,7 +14,7 @@
   <header class="topbar">
     <button id="btn-menu" class="icon-btn menu-btn" title="Settings" aria-label="Settings">☰</button>
     <div class="title">
-      <span class="logo" aria-hidden="true">🌐</span>
+      <span class="logo" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
       <span class="title-text">Translator</span>
     </div>
     <div class="status">
@@ -41,7 +41,7 @@
             <label for="api-key">Gemini API key</label>
             <div class="input-row">
               <input type="password" id="api-key" placeholder="Paste key" autocomplete="off" spellcheck="false" />
-              <button id="btn-show-key" class="icon-btn small" type="button" aria-label="Show or hide key">👁</button>
+              <button id="btn-show-key" class="icon-btn small" type="button" aria-label="Show or hide key"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
             </div>
             <p class="hint">From <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a>. Stored only in this browser.</p>
           </div>
@@ -53,7 +53,7 @@
               <label for="lang-source">You speak</label>
               <select id="lang-source"></select>
             </div>
-            <button id="btn-swap" class="swap" type="button" aria-label="Swap languages">⇄</button>
+            <button id="btn-swap" class="swap" type="button" aria-label="Swap languages"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/><polyline points="5 12 12 5 19 12"/></svg></button>
             <div class="field">
               <label for="lang-target">Translate to</label>
               <select id="lang-target"></select>
@@ -90,13 +90,13 @@
         </section>
 
         <section class="section">
-          <button id="btn-edit-prompt" class="btn ghost full" type="button">✎ Customise system prompt</button>
+          <button id="btn-edit-prompt" class="btn ghost full" type="button"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:middle;margin-right:0.5em;"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>Customise system prompt</button>
         </section>
 
         <section class="section actions">
-          <button id="btn-pip" class="btn ghost" type="button">📺 Pop out</button>
-          <button id="btn-log" class="btn ghost" type="button">≡ Log</button>
-          <button id="btn-clear" class="btn ghost" type="button">⌫ Clear chat</button>
+          <button id="btn-pip" class="btn ghost" type="button"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:middle;margin-right:0.5em;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M18 14v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5"/></svg>Pop out</button>
+          <button id="btn-log" class="btn ghost" type="button"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:middle;margin-right:0.5em;"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>Log</button>
+          <button id="btn-clear" class="btn ghost" type="button"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:1em;height:1em;vertical-align:middle;margin-right:0.5em;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Clear chat</button>
         </section>
 
         <p class="footer-hint">Audio &amp; data go directly from this browser to Google. No server in between.</p>
@@ -114,7 +114,7 @@
   <main class="conv">
     <div id="turns" class="turns" aria-live="polite">
       <div class="empty-state" id="empty-state">
-        <div class="empty-icon" aria-hidden="true">🎙️</div>
+        <div class="empty-icon" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
         <p>Press <strong>Start</strong> and speak.<br/>Your words appear on one side, the translation on the other.</p>
         <p class="hint">First, open <button class="link-btn" id="open-settings-from-empty">Settings</button> and paste your Gemini API key.</p>
       </div>
@@ -123,15 +123,15 @@
 
   <footer class="controls">
     <button id="btn-start" class="btn primary" type="button">
-      <span class="btn-ic" aria-hidden="true">▶</span><span class="btn-tx">Start</span>
+      <span class="btn-ic" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg></span><span class="btn-tx">Start</span>
     </button>
     <button id="btn-hush" class="btn warn" type="button" disabled title="Cancel current translation">
-      <span class="btn-ic" aria-hidden="true">🤫</span><span class="btn-tx">Hush</span>
+      <span class="btn-ic" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21v-4a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v4"/><circle cx="12" cy="7" r="4"/><path d="M15 13l-3 3-3-3"/></svg></span><span class="btn-tx">Hush</span>
     </button>
     <button id="btn-stop" class="btn danger" type="button" disabled>
-      <span class="btn-ic" aria-hidden="true">■</span><span class="btn-tx">Stop</span>
+      <span class="btn-ic" aria-hidden="true"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16"/></svg></span><span class="btn-tx">Stop</span>
     </button>
-    <button id="btn-pip-quick" class="icon-btn quick" type="button" title="Pop out current translation">📺</button>
+    <button id="btn-pip-quick" class="icon-btn quick" type="button" title="Pop out current translation"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><path d="M18 14v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5"/></svg></button>
   </footer>
 
   <!-- System prompt editor sheet -->
