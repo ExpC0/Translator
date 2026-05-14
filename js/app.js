@@ -353,7 +353,6 @@ async function startPipeline() {
   const translationMode = els.modeSelect.value; // 'audio' | 'text' | 'transcribe'
   const dir = els.dirSelect.value;               // 'bidir' | 'oneway'
   const isAudio = translationMode === 'audio';
-  const responseModalities = isAudio ? ['AUDIO'] : ['TEXT'];
 
   setStatus('connecting');
   els.btnStart.disabled = true;
@@ -380,8 +379,11 @@ async function startPipeline() {
     apiKey,
     voice: els.voice.value,
     systemInstruction,
-    responseModalities,
-    useOutputTranscription: isAudio,
+    // outputAudioTranscription is needed for both audio and text modes:
+    // audio mode — show the translation text alongside the spoken audio
+    // text mode  — the ONLY way to get text output (native audio model doesn't support TEXT modality)
+    // transcribe mode — no model output needed, only inputAudioTranscription matters
+    useOutputTranscription: translationMode !== 'transcribe',
     onAudio: isAudio ? (b64) => { state.player.playChunk(b64); } : () => {},
     onInputChunk: appendInput,
     onOutputChunk: translationMode !== 'transcribe' ? appendOutput : () => {},

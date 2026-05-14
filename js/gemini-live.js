@@ -43,7 +43,7 @@ OUTPUT RULES:
 8. Speak with natural prosody and fluent phrasing.`;
 
 const TRANSCRIBE_SYSTEM_PROMPT_TEMPLATE =
-`Output a single "." for each utterance. Do not translate or speak.`;
+`You have no speaking or translation role. Produce absolutely no output — no text, no acknowledgement, no punctuation, nothing at all. The system transcribes speech automatically. Stay completely silent.`;
 
 function renderSystemPrompt(template, sourceName, targetName) {
   return (template || DEFAULT_SYSTEM_PROMPT_TEMPLATE)
@@ -72,7 +72,6 @@ class GeminiLiveClient {
     this.model = opts.model || DEFAULT_MODEL;
     this.voice = opts.voice || 'Zephyr';
     this.systemInstruction = opts.systemInstruction || '';
-    this.responseModalities = opts.responseModalities || ['AUDIO'];
     this.useOutputTranscription = opts.useOutputTranscription !== false;
 
     this.onAudio = opts.onAudio || (() => {});
@@ -139,14 +138,16 @@ class GeminiLiveClient {
   }
 
   _onOpen() {
-    const isAudio = this.responseModalities.includes('AUDIO');
-    const genConfig = { responseModalities: this.responseModalities };
-    if (isAudio) {
-      genConfig.speechConfig = {
+    // gemini-3.1-flash-live-preview (and all native audio models) only support
+    // AUDIO response modality. TEXT modality is not supported. To get a text
+    // representation of the model's response, use outputAudioTranscription.
+    const genConfig = {
+      responseModalities: ['AUDIO'],
+      speechConfig: {
         voiceConfig: { prebuiltVoiceConfig: { voiceName: this.voice } },
-      };
-      genConfig.mediaResolution = 'MEDIA_RESOLUTION_MEDIUM';
-    }
+      },
+      mediaResolution: 'MEDIA_RESOLUTION_MEDIUM',
+    };
 
     const setup = {
       setup: {
@@ -163,6 +164,7 @@ class GeminiLiveClient {
           },
           activityHandling: 'NO_INTERRUPTION',
         },
+        // Audio tokens accumulate at ~25 tok/s; compression keeps long sessions alive.
         contextWindowCompression: {
           triggerTokens: '104857',
           slidingWindow: { targetTokens: '52428' },
@@ -171,7 +173,7 @@ class GeminiLiveClient {
       },
     };
 
-    if (isAudio && this.useOutputTranscription) {
+    if (this.useOutputTranscription) {
       setup.setup.outputAudioTranscription = {};
     }
 
