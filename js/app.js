@@ -26,8 +26,12 @@ const els = {
   langSource:    $('lang-source'),
   langTarget:    $('lang-target'),
   voice:         $('voice'),
+  audioInput:    $('audio-input'),
+  audioInputHint:$('audio-input-hint'),
   audioSource:   $('audio-source'),
   audioHint:     $('audio-source-hint'),
+  audioOutput:   $('audio-output'),
+  audioOutputHint:$('audio-output-hint'),
   modeSelect:    $('mode-select'),
   dirSelect:     $('dir-select'),
   dirField:      $('dir-field'),
@@ -66,6 +70,7 @@ const state = {
   capture: null,
   player: null,
   pip: null,
+  currentAudioMode: '',
   startedAt: 0,
   ageTimer: 0,
   liveTurn: null,
@@ -84,7 +89,9 @@ function savePrefs() {
       source: els.langSource.value,
       target: els.langTarget.value,
       voice:  els.voice.value,
+      input:  els.audioInput.value,
       audio:  els.audioSource.value,
+      output: els.audioOutput.value,
       mode:   els.modeSelect.value,
       dir:    els.dirSelect.value,
       promptTemplate: state.systemPromptTemplate || '',
@@ -148,7 +155,11 @@ function fillLanguages() {
   els.langSource.value  = prefs.source || 'en';
   els.langTarget.value  = prefs.target || 'zh';
   els.voice.value       = prefs.voice  || 'Zephyr';
+  els.audioInput.dataset.preferred = prefs.input || '';
+  els.audioInput.value  = prefs.input  || '';
   els.audioSource.value = prefs.audio  || 'mic';
+  els.audioOutput.dataset.preferred = prefs.output || '';
+  els.audioOutput.value = prefs.output || '';
   els.modeSelect.value  = prefs.mode   || 'audio';
   els.dirSelect.value   = prefs.dir    || 'bidir';
   state.systemPromptTemplate = prefs.promptTemplate || null;
@@ -179,6 +190,192 @@ function fillLanguages() {
     }
     if (els.audioSource.value !== 'mic') els.audioSource.value = 'mic';
     els.audioHint.textContent = 'App audio capture isn\'t supported in this browser.';
+  }
+
+  updateAudioInputSupport();
+  updateAudioOutputSupport();
+}
+
+function updateAudioInputSupport() {
+  if (!els.audioInput) return;
+  const supported = !!(navigator.mediaDevices &&
+                       navigator.mediaDevices.getUserMedia &&
+                       navigator.mediaDevices.enumerateDevices);
+  els.audioInput.disabled = !supported;
+  if (!supported) {
+    els.audioInputHint.textContent = 'This browser does not allow web apps to choose a microphone.';
+  }
+}
+
+function updateAudioOutputSupport() {
+  if (!els.audioOutput) return;
+  const canSelect = LiveAudio.canSelectOutputDevice && LiveAudio.canSelectOutputDevice();
+  const canList = !!(navigator.mediaDevices && navigator.mediaDevices.enumerateDevices);
+  const supported = canSelect && canList;
+  els.audioOutput.disabled = !supported;
+  if (!supported) {
+    els.audioOutputHint.textContent = 'This browser does not allow web apps to choose a speaker.';
+  }
+}
+
+function inputDeviceLabel(device, index) {
+  if (device.label) return device.label;
+  if (device.deviceId === 'default') return 'System default';
+  if (device.deviceId === 'communications') return 'Communications default';
+  return `Microphone ${index + 1}`;
+}
+
+function outputDeviceLabel(device, index) {
+  if (device.label) return device.label;
+  if (device.deviceId === 'default') return 'System default';
+  if (device.deviceId === 'communications') return 'Communications default';
+  return `Speaker ${index + 1}`;
+}
+
+async function refreshAudioInputDevices() {
+  if (!els.audioInput || els.audioInput.disabled) return;
+  try {
+    const selected = els.audioInput.value || els.audioInput.dataset.preferred || '';
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const inputs = devices.filter((d) => d.kind === 'audioinput');
+    const seen = new Set();
+    const frag = document.createDocumentFragment();
+
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'System default';
+    frag.appendChild(defaultOpt);
+    seen.add('');
+
+    inputs.forEach((device, index) => {
+      const id = device.deviceId || '';
+      if (id === 'default') return;
+      if (seen.has(id)) return;
+      seen.add(id);
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = inputDeviceLabel(device, index);
+      frag.appendChild(opt);
+    });
+
+    els.audioInput.innerHTML = '';
+    els.audioInput.appendChild(frag);
+    els.audioInput.value = seen.has(selected) ? selected : '';
+    els.audioInput.dataset.preferred = els.audioInput.value;
+
+    if (inputs.length) {
+      const hasLabels = inputs.some((d) => d.label);
+      els.audioInputHint.textContent = hasLabels
+        ? 'Changes apply immediately; Mic + app audio asks you to pick app audio again.'
+        : 'Device names may appear after microphone permission.';
+    } else {
+      els.audioInputHint.textContent = 'No microphones were reported by this browser.';
+    }
+    savePrefs();
+  } catch (e) {
+    els.audioInput.disabled = true;
+    els.audioInputHint.textContent = 'Could not read microphone devices.';
+    log('warn', 'Microphone devices unavailable: ' + (e && e.message ? e.message : e));
+  }
+}
+
+async function refreshAudioOutputDevices() {
+  if (!els.audioOutput || els.audioOutput.disabled) return;
+  try {
+    const selected = els.audioOutput.value || els.audioOutput.dataset.preferred || '';
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const outputs = devices.filter((d) => d.kind === 'audiooutput');
+    const seen = new Set();
+    const frag = document.createDocumentFragment();
+
+    const defaultOpt = document.createElement('option');
+    defaultOpt.value = '';
+    defaultOpt.textContent = 'System default';
+    frag.appendChild(defaultOpt);
+    seen.add('');
+
+    outputs.forEach((device, index) => {
+      const id = device.deviceId || '';
+      if (id === 'default') return;
+      if (seen.has(id)) return;
+      seen.add(id);
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = outputDeviceLabel(device, index);
+      frag.appendChild(opt);
+    });
+
+    els.audioOutput.innerHTML = '';
+    els.audioOutput.appendChild(frag);
+    els.audioOutput.value = seen.has(selected) ? selected : '';
+    els.audioOutput.dataset.preferred = els.audioOutput.value;
+
+    if (outputs.length) {
+      const hasLabels = outputs.some((d) => d.label);
+      els.audioOutputHint.textContent = hasLabels
+        ? 'Changes apply immediately to translated speech when supported by the browser.'
+        : 'Device names may appear after microphone permission.';
+    } else {
+      els.audioOutputHint.textContent = 'No speaker devices were reported by this browser.';
+    }
+    savePrefs();
+  } catch (e) {
+    els.audioOutput.disabled = true;
+    els.audioOutputHint.textContent = 'Could not read audio output devices.';
+    log('warn', 'Audio output devices unavailable: ' + (e && e.message ? e.message : e));
+  }
+}
+
+async function changeAudioOutput() {
+  els.audioOutput.dataset.preferred = els.audioOutput.value;
+  savePrefs();
+  if (!state.player) return;
+  try {
+    await state.player.setOutputDevice(els.audioOutput.value);
+    log('info', 'Audio output changed: ' + (els.audioOutput.selectedOptions[0]?.textContent || 'System default'));
+  } catch (e) {
+    log('error', 'Audio output change failed: ' + (e && e.message ? e.message : e));
+    await refreshAudioOutputDevices();
+  }
+}
+
+function createAudioCapture() {
+  return new LiveAudio.AudioCapture({
+    onChunk: (buf) => {
+      if (!state.paused) state.client.sendAudio(buf);
+    },
+    onLevel: (l) => setMeter(els.micMeter, l),
+    onDisplayEnded: () => {
+      log('warn', 'App audio share ended by the browser.');
+      stopPipeline();
+    },
+  });
+}
+
+async function changeAudioInput() {
+  els.audioInput.dataset.preferred = els.audioInput.value;
+  savePrefs();
+  if (!state.running) return;
+
+  const audioMode = state.currentAudioMode || els.audioSource.value || 'mic';
+  if (audioMode === 'display') {
+    log('info', 'Microphone changed; it will apply when microphone input is used.');
+    return;
+  }
+
+  try {
+    if (audioMode === 'both') {
+      log('info', 'Pick the app/tab audio again to switch microphones.');
+    }
+    const nextCapture = createAudioCapture();
+    await nextCapture.start({ mode: audioMode, micDeviceId: els.audioInput.value });
+    try { state.capture && state.capture.stop(); } catch (_) {}
+    state.capture = nextCapture;
+    await refreshAudioInputDevices();
+    log('info', 'Microphone changed: ' + (els.audioInput.selectedOptions[0]?.textContent || 'System default'));
+  } catch (e) {
+    log('error', 'Microphone change failed: ' + (e && e.message ? e.message : e));
+    await refreshAudioInputDevices();
   }
 }
 
@@ -375,6 +572,7 @@ async function startPipeline() {
 
   if (isAudio) {
     state.player = new LiveAudio.TTSPlayer({
+      outputDeviceId: els.audioOutput.value,
       onLevel: (l) => setMeter(els.outMeter, l),
       onActiveChange: (active) => {
         const s = state.client && state.client.state;
@@ -413,18 +611,12 @@ async function startPipeline() {
 
   try {
     if (isAudio) await state.player.ensureCtx();
-    state.capture = new LiveAudio.AudioCapture({
-      onChunk: (buf) => {
-        if (!state.paused) state.client.sendAudio(buf);
-      },
-      onLevel: (l) => setMeter(els.micMeter, l),
-      onDisplayEnded: () => {
-        log('warn', 'App audio share ended by the browser.');
-        stopPipeline();
-      },
-    });
+    state.capture = createAudioCapture();
     const audioMode = els.audioSource.value || 'mic';
-    await state.capture.start({ mode: audioMode });
+    await state.capture.start({ mode: audioMode, micDeviceId: els.audioInput.value });
+    state.currentAudioMode = audioMode;
+    await refreshAudioInputDevices();
+    await refreshAudioOutputDevices();
     log('info', 'Audio source: ' + ({mic:'microphone', display:'app audio', both:'mic + app audio'}[audioMode] || audioMode));
   } catch (e) {
     log('error', 'Audio error: ' + (e && e.message ? e.message : e));
@@ -457,6 +649,7 @@ async function stopPipeline() {
   state.client = null;
   state.capture = null;
   state.player = null;
+  state.currentAudioMode = '';
   state.running = false;
   state.paused = false;
   if (state.ageTimer) { clearInterval(state.ageTimer); state.ageTimer = 0; }
@@ -773,6 +966,8 @@ function wireUI() {
   for (const sel of [els.langSource, els.langTarget, els.voice, els.audioSource, els.dirSelect]) {
     sel.addEventListener('change', savePrefs);
   }
+  els.audioInput.addEventListener('change', changeAudioInput);
+  els.audioOutput.addEventListener('change', changeAudioOutput);
   els.apiKey.addEventListener('change', savePrefs);
 
   els.btnMenu.addEventListener('click', () => openSheet('sidebar'));
@@ -803,6 +998,13 @@ function wireUI() {
     if (state.running) stopPipeline();
     if (state.pip) state.pip.close();
   });
+
+  if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+    navigator.mediaDevices.addEventListener('devicechange', () => {
+      refreshAudioInputDevices();
+      refreshAudioOutputDevices();
+    });
+  }
 }
 
 function checkSupport() {
@@ -831,5 +1033,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fillLanguages();
   wireUI();
   setStatus('idle');
+  refreshAudioInputDevices();
+  refreshAudioOutputDevices();
   if (checkSupport()) log('info', 'Ready.');
 });

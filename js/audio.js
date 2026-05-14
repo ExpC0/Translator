@@ -87,19 +87,26 @@ class AudioCapture {
   }
 
   // mode: 'mic' | 'display' | 'both'
-  async start({ mode = 'mic' } = {}) {
+  async start({ mode = 'mic', micDeviceId = '' } = {}) {
     const wantMic = mode === 'mic' || mode === 'both';
     const wantDisplay = mode === 'display' || mode === 'both';
 
     if (wantMic) {
-      const s = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-          channelCount: 1,
-        },
-      });
+      const baseAudio = {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+        channelCount: 1,
+      };
+      let s;
+      try {
+        const audio = { ...baseAudio };
+        if (micDeviceId) audio.deviceId = { exact: micDeviceId };
+        s = await navigator.mediaDevices.getUserMedia({ audio });
+      } catch (e) {
+        if (!micDeviceId) throw e;
+        s = await navigator.mediaDevices.getUserMedia({ audio: baseAudio });
+      }
       this.streams.push({ kind: 'mic', stream: s });
     }
 
@@ -183,10 +190,14 @@ class AudioCapture {
 }
 
 class TTSPlayer {
-  constructor({ onLevel, onActiveChange } = {}) {
+  constructor({ onLevel, onActiveChange, outputDeviceId = '' } = {}) {
     this.onLevel = onLevel || (() => {});
     this.onActiveChange = onActiveChange || (() => {});
+    this.outputDeviceId = outputDeviceId || '';
     this.ctx = null;
+    this.outputNode = null;
+    this.outputStreamNode = null;
+    this.outputEl = null;
     this.nextStart = 0;
     this.sources = new Set();
     this._level = 0;
@@ -196,8 +207,61 @@ class TTSPlayer {
   async ensureCtx() {
     if (!this.ctx) {
       this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      await this._configureOutput();
     }
     if (this.ctx.state === 'suspended') await this.ctx.resume();
+  }
+
+  async _configureOutput() {
+    if (!this.ctx) return;
+
+    if (typeof this.ctx.setSinkId === 'function') {
+      try {
+        await this.ctx.setSinkId(this.outputDeviceId || '');
+      } catch (e) {
+        if (!this.outputDeviceId) throw e;
+        this.outputDeviceId = '';
+        await this.ctx.setSinkId('');
+      }
+      this.outputNode = this.ctx.destination;
+      return;
+    }
+
+    if (TTSPlayer.canSelectOutputDevice()) {
+      this.outputStreamNode = this.ctx.createMediaStreamDestination();
+      this.outputEl = new Audio();
+      this.outputEl.autoplay = true;
+      this.outputEl.playsInline = true;
+      this.outputEl.srcObject = this.outputStreamNode.stream;
+      try {
+        await this.outputEl.setSinkId(this.outputDeviceId || '');
+      } catch (e) {
+        if (!this.outputDeviceId) throw e;
+        this.outputDeviceId = '';
+        await this.outputEl.setSinkId('');
+      }
+      try { await this.outputEl.play(); } catch (_) {}
+      this.outputNode = this.outputStreamNode;
+      return;
+    }
+
+    this.outputNode = this.ctx.destination;
+  }
+
+  async setOutputDevice(deviceId) {
+    this.outputDeviceId = deviceId || '';
+
+    if (!this.ctx) return;
+
+    if (typeof this.ctx.setSinkId === 'function') {
+      await this.ctx.setSinkId(this.outputDeviceId);
+      this.outputNode = this.ctx.destination;
+      return;
+    }
+
+    if (this.outputEl && typeof this.outputEl.setSinkId === 'function') {
+      await this.outputEl.setSinkId(this.outputDeviceId);
+    }
   }
 
   async playChunk(base64Pcm) {
@@ -224,7 +288,7 @@ class TTSPlayer {
     buf.copyToChannel(float, 0);
     const src = this.ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(this.ctx.destination);
+    src.connect(this.outputNode || this.ctx.destination);
     const startAt = Math.max(this.ctx.currentTime + 0.04, this.nextStart);
     src.start(startAt);
     this.nextStart = startAt + buf.duration;
@@ -277,8 +341,22 @@ class TTSPlayer {
     this.hush();
     if (this._rafId) cancelAnimationFrame(this._rafId);
     this._rafId = 0;
+    if (this.outputEl) {
+      try { this.outputEl.pause(); } catch (_) {}
+      this.outputEl.srcObject = null;
+    }
+    try { this.outputStreamNode && this.outputStreamNode.disconnect(); } catch (_) {}
     try { this.ctx && this.ctx.close(); } catch (_) {}
+    this.outputEl = null;
+    this.outputStreamNode = null;
+    this.outputNode = null;
     this.ctx = null;
+  }
+
+  static canSelectOutputDevice() {
+    return typeof HTMLMediaElement !== 'undefined' &&
+           !!HTMLMediaElement.prototype &&
+           typeof HTMLMediaElement.prototype.setSinkId === 'function';
   }
 }
 
@@ -296,4 +374,10 @@ function canCaptureDisplayAudio() {
   return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
 }
 
-window.LiveAudio = { AudioCapture, TTSPlayer, abToBase64, canCaptureDisplayAudio };
+function canSelectOutputDevice() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  return (Ctx && typeof Ctx.prototype.setSinkId === 'function') ||
+         TTSPlayer.canSelectOutputDevice();
+}
+
+window.LiveAudio = { AudioCapture, TTSPlayer, abToBase64, canCaptureDisplayAudio, canSelectOutputDevice };

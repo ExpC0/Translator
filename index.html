@@ -108,6 +108,16 @@
 
         <section class="section">
           <div class="field">
+            <label for="audio-input">Microphone</label>
+            <select id="audio-input">
+              <option value="">System default</option>
+            </select>
+            <p class="hint" id="audio-input-hint">Choose the microphone used for speech input. Device names may appear after permission.</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="field">
             <label for="audio-source">Audio source</label>
             <select id="audio-source">
               <option value="mic">Microphone only</option>
@@ -115,6 +125,16 @@
               <option value="both">Mic + app audio</option>
             </select>
             <p class="hint" id="audio-source-hint">Default microphone. Use "App audio" to translate a tab or window. Browser support varies.</p>
+          </div>
+        </section>
+
+        <section class="section">
+          <div class="field">
+            <label for="audio-output">Audio output</label>
+            <select id="audio-output">
+              <option value="">System default</option>
+            </select>
+            <p class="hint" id="audio-output-hint">Choose where translated speech plays. Device names may appear after microphone permission.</p>
           </div>
         </section>
 
