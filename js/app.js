@@ -146,7 +146,7 @@ function fillLanguages() {
   const prefs = loadPrefs();
   els.apiKey.value      = prefs.apiKey || '';
   els.langSource.value  = prefs.source || 'en';
-  els.langTarget.value  = prefs.target || 'es';
+  els.langTarget.value  = prefs.target || 'zh';
   els.voice.value       = prefs.voice  || 'Zephyr';
   els.audioSource.value = prefs.audio  || 'mic';
   els.modeSelect.value  = prefs.mode   || 'audio';
