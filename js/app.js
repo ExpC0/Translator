@@ -17,6 +17,8 @@ const LANGUAGES = [
 const MAX_TURNS = 50;
 const MAX_LOG = 200;
 const STORAGE_KEY = 'live-translator-prefs';
+const COMPANION_HTTP_URL = 'http://127.0.0.1:52341';
+const COMPANION_WS_URL = 'ws://127.0.0.1:52341/audio';
 
 const $ = (id) => document.getElementById(id);
 
@@ -75,6 +77,7 @@ const state = {
   ageTimer: 0,
   liveTurn: null,
   systemPromptTemplate: null,
+  companionAvailable: false,
 };
 
 // ─── Prefs ────────────────────────────────────────────────────────────────────
@@ -138,6 +141,57 @@ function updateDirVisibility() {
   els.dirField.style.display = els.modeSelect.value === 'transcribe' ? 'none' : '';
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = 500) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: ctrl.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function updateAudioSourceAvailability() {
+  for (const opt of els.audioSource.options) {
+    if (opt.value === 'display') {
+      opt.disabled = !LiveAudio.canCaptureDisplayAudio();
+    } else if (opt.value === 'companion') {
+      opt.disabled = !state.companionAvailable;
+    }
+  }
+  if (els.audioSource.selectedOptions[0]?.disabled) {
+    els.audioSource.value = 'mic';
+  }
+
+  if (!LiveAudio.canCaptureDisplayAudio() && !state.companionAvailable) {
+    els.audioHint.textContent = 'App audio capture is unavailable. Start the companion service or use Chrome/Edge tab audio.';
+  } else if (state.companionAvailable) {
+    els.audioHint.textContent = 'Companion app detected. Use it for background app audio without screen sharing.';
+  } else if (!LiveAudio.canCaptureDisplayAudio()) {
+    els.audioHint.textContent = 'Browser app audio capture is unsupported here. Start the companion service to use app audio.';
+  } else {
+    els.audioHint.textContent = 'Default microphone. Use app/tab audio in Chrome/Edge, or Companion app audio when the local service is running.';
+  }
+}
+
+async function detectCompanionService({ silent = true } = {}) {
+  try {
+    const res = await fetchWithTimeout(`${COMPANION_HTTP_URL}/status`, {
+      mode: 'cors',
+      cache: 'no-store',
+      headers: { 'X-Live-Translator': 'status' },
+    }, 600);
+    if (!res.ok) throw new Error(`status ${res.status}`);
+    const data = await res.json();
+    state.companionAvailable = data && data.status === 'ok';
+  } catch (e) {
+    state.companionAvailable = false;
+    if (!silent) log('warn', 'Companion service unavailable: ' + (e && e.message ? e.message : e));
+  }
+  updateAudioSourceAvailability();
+  return state.companionAvailable;
+}
+
 function fillLanguages() {
   const frag1 = document.createDocumentFragment();
   const frag2 = document.createDocumentFragment();
@@ -182,15 +236,7 @@ function fillLanguages() {
   }
 
   updateDirVisibility();
-
-  // Disable display-capture options on browsers that lack the API (mostly mobile).
-  if (!LiveAudio.canCaptureDisplayAudio()) {
-    for (const opt of els.audioSource.options) {
-      if (opt.value !== 'mic') opt.disabled = true;
-    }
-    if (els.audioSource.value !== 'mic') els.audioSource.value = 'mic';
-    els.audioHint.textContent = 'App audio capture isn\'t supported in this browser.';
-  }
+  updateAudioSourceAvailability();
 
   updateAudioInputSupport();
   updateAudioOutputSupport();
@@ -352,13 +398,27 @@ function createAudioCapture() {
   });
 }
 
+function createCompanionCapture() {
+  return new LiveAudio.CompanionAudioCapture({
+    onChunk: (buf) => {
+      if (!state.paused) state.client.sendAudio(buf);
+    },
+    onLevel: (l) => setMeter(els.micMeter, l),
+    onDisplayEnded: () => {
+      if (!state.running) return;
+      log('warn', 'Companion audio service disconnected.');
+      stopPipeline();
+    },
+  });
+}
+
 async function changeAudioInput() {
   els.audioInput.dataset.preferred = els.audioInput.value;
   savePrefs();
   if (!state.running) return;
 
   const audioMode = state.currentAudioMode || els.audioSource.value || 'mic';
-  if (audioMode === 'display') {
+  if (audioMode === 'display' || audioMode === 'companion') {
     log('info', 'Microphone changed; it will apply when microphone input is used.');
     return;
   }
@@ -611,13 +671,21 @@ async function startPipeline() {
 
   try {
     if (isAudio) await state.player.ensureCtx();
-    state.capture = createAudioCapture();
     const audioMode = els.audioSource.value || 'mic';
-    await state.capture.start({ mode: audioMode, micDeviceId: els.audioInput.value });
+    if (audioMode === 'companion') {
+      if (!state.companionAvailable && !(await detectCompanionService({ silent: false }))) {
+        throw new Error('Companion audio service is not running.');
+      }
+      state.capture = createCompanionCapture();
+      await state.capture.start({ wsUrl: COMPANION_WS_URL });
+    } else {
+      state.capture = createAudioCapture();
+      await state.capture.start({ mode: audioMode, micDeviceId: els.audioInput.value });
+    }
     state.currentAudioMode = audioMode;
     await refreshAudioInputDevices();
     await refreshAudioOutputDevices();
-    log('info', 'Audio source: ' + ({mic:'microphone', display:'app audio', both:'mic + app audio'}[audioMode] || audioMode));
+    log('info', 'Audio source: ' + ({mic:'microphone', display:'browser app audio', companion:'companion app audio', both:'mic + app audio'}[audioMode] || audioMode));
   } catch (e) {
     log('error', 'Audio error: ' + (e && e.message ? e.message : e));
     await stopPipeline();
@@ -963,7 +1031,11 @@ function wireUI() {
     updateDirVisibility();
     savePrefs();
   });
-  for (const sel of [els.langSource, els.langTarget, els.voice, els.audioSource, els.dirSelect]) {
+  els.audioSource.addEventListener('change', () => {
+    if (els.audioSource.value === 'companion') detectCompanionService({ silent: false });
+    savePrefs();
+  });
+  for (const sel of [els.langSource, els.langTarget, els.voice, els.dirSelect]) {
     sel.addEventListener('change', savePrefs);
   }
   els.audioInput.addEventListener('change', changeAudioInput);
@@ -998,6 +1070,7 @@ function wireUI() {
     if (state.running) stopPipeline();
     if (state.pip) state.pip.close();
   });
+  window.addEventListener('focus', () => detectCompanionService());
 
   if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
     navigator.mediaDevices.addEventListener('devicechange', () => {
@@ -1033,6 +1106,7 @@ document.addEventListener('DOMContentLoaded', () => {
   fillLanguages();
   wireUI();
   setStatus('idle');
+  detectCompanionService();
   refreshAudioInputDevices();
   refreshAudioOutputDevices();
   if (checkSupport()) log('info', 'Ready.');

@@ -9,7 +9,7 @@ A real-time, bidirectional audio translator powered by Google's Gemini Live API.
 ### Key Features
 
 - **Real-time bidirectional translation** – Automatically detects the spoken language and outputs translation in the other language
-- **Multiple audio sources** – Capture from microphone, app/tab audio, or both simultaneously
+- **Multiple audio sources** – Capture from microphone, browser tab audio, companion app audio, or both simultaneously
 - **8+ languages supported** – English, Mandarin Chinese, Bengali, Japanese, Korean, Spanish, French, German, Arabic, Hindi, Portuguese, and more
 - **Multiple voices** – Choose from 8 distinct AI voices (Zephyr, Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus)
 - **Customizable system prompts** – Tailor the translation behavior to your needs
@@ -24,6 +24,8 @@ A real-time, bidirectional audio translator powered by Google's Gemini Live API.
 ```
 live-translator/
 ├── index.html           # Main HTML - header, sidebar, chat, modal sheets
+├── companion/
+│   └── windows/         # Optional localhost audio bridge for app/system audio
 ├── css/
 │   └── style.css       # Responsive mobile-first styling
 └── js/
@@ -74,7 +76,7 @@ live-translator/
    - Paste your API key in the "Gemini API key" field
    - Select your source and target languages
    - Choose a voice from the dropdown
-   - Select audio source (Microphone, App audio, or both)
+  - Select audio source (Microphone, App audio, Companion app audio, or both)
    - Click **Save** or start translating
 
 ## Usage
@@ -115,7 +117,7 @@ live-translator/
 | **You speak** | Language dropdown | Source language (the language you'll speak) |
 | **Translate to** | Language dropdown | Target language (the translation output language) |
 | **Voice** | Zephyr, Puck, Charon, Kore, Fenrir, Aoede, Leda, Orus | AI voice for translation output |
-| **Audio source** | Microphone, App/tab, Mic + app | Which audio to capture and translate |
+| **Audio source** | Microphone, App/tab, Companion app audio, Mic + app | Which audio to capture and translate |
 
 ## Browser Support
 
@@ -123,11 +125,33 @@ live-translator/
 |---------|------------|---------|--------|
 | Microphone input | ✅ | ✅ | ✅ |
 | Display/tab audio | ✅ | ❌ | ❌ |
+| Companion app audio | ✅ | ✅ | ✅ |
 | WebSocket (WebAudio) | ✅ | ✅ | ✅ |
 | Web Audio API | ✅ | ✅ | ✅ |
 | AudioWorklet | ✅ | ✅ | ⚠️ Limited |
 
 *Display audio capture requires Chromium-based browsers (Chrome, Edge, Brave, etc.)*
+*Companion app audio requires the optional Windows companion service in `companion/windows`.*
+
+## Companion App Audio
+
+Firefox cannot capture tab/window audio through screen sharing. The optional Windows companion service solves that by running a local server on `127.0.0.1:52341`:
+
+- `GET /status` lets the web page detect the service
+- `ws://127.0.0.1:52341/audio` streams mono 16 kHz PCM16 audio frames
+
+Build it from a Visual Studio Developer PowerShell or MinGW CMake environment:
+
+```powershell
+cd companion\windows
+cmake -S . -B build
+cmake --build build --config Release
+.\build\live-translator-companion.exe
+```
+
+With Visual Studio generators, the executable may be under `build\Release\` instead.
+
+The current native MVP captures default system output loopback. The web protocol is ready for a later process-specific Windows capture implementation using `AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`.
 
 ## File Descriptions
 

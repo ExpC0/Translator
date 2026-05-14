@@ -189,6 +189,81 @@ class AudioCapture {
   }
 }
 
+class CompanionAudioCapture {
+  constructor({ onChunk, onLevel, onDisplayEnded } = {}) {
+    this.onChunk = onChunk || (() => {});
+    this.onLevel = onLevel || (() => {});
+    this.onDisplayEnded = onDisplayEnded || (() => {});
+    this.ws = null;
+    this._level = 0;
+    this._rafId = 0;
+    this._stopping = false;
+  }
+
+  async start({ wsUrl = 'ws://127.0.0.1:52341/audio' } = {}) {
+    await new Promise((resolve, reject) => {
+      const ws = new WebSocket(wsUrl);
+      let settled = false;
+      ws.binaryType = 'arraybuffer';
+      ws.onopen = () => {
+        settled = true;
+        this._stopping = false;
+        this.ws = ws;
+        this._startMeter();
+        resolve();
+      };
+      ws.onerror = () => {
+        if (!settled) reject(new Error('Companion audio service is unavailable.'));
+      };
+      ws.onclose = () => {
+        this.ws = null;
+        if (!this._stopping) this.onDisplayEnded();
+      };
+      ws.onmessage = (ev) => {
+        if (!(ev.data instanceof ArrayBuffer)) return;
+        this._trackLevel(ev.data);
+        this.onChunk(ev.data);
+      };
+    });
+  }
+
+  _trackLevel(buffer) {
+    const pcm = new Int16Array(buffer);
+    let peak = 0;
+    for (let i = 0; i < pcm.length; i++) {
+      const a = Math.abs(pcm[i] / 32768);
+      if (a > peak) peak = a;
+    }
+    if (peak > this._level) this._level = peak;
+  }
+
+  _startMeter() {
+    if (this._rafId) return;
+    const tick = () => {
+      this._level *= 0.85;
+      this.onLevel(this._level);
+      if (this.ws) {
+        this._rafId = requestAnimationFrame(tick);
+      } else {
+        this._rafId = 0;
+        this.onLevel(0);
+      }
+    };
+    this._rafId = requestAnimationFrame(tick);
+  }
+
+  stop() {
+    const ws = this.ws;
+    this._stopping = true;
+    this.ws = null;
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+    this._rafId = 0;
+    this._level = 0;
+    this.onLevel(0);
+    try { ws && ws.close(); } catch (_) {}
+  }
+}
+
 class TTSPlayer {
   constructor({ onLevel, onActiveChange, outputDeviceId = '' } = {}) {
     this.onLevel = onLevel || (() => {});
@@ -380,4 +455,4 @@ function canSelectOutputDevice() {
          TTSPlayer.canSelectOutputDevice();
 }
 
-window.LiveAudio = { AudioCapture, TTSPlayer, abToBase64, canCaptureDisplayAudio, canSelectOutputDevice };
+window.LiveAudio = { AudioCapture, CompanionAudioCapture, TTSPlayer, abToBase64, canCaptureDisplayAudio, canSelectOutputDevice };
