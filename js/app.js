@@ -153,6 +153,19 @@ function fillLanguages() {
   els.dirSelect.value   = prefs.dir    || 'bidir';
   state.systemPromptTemplate = prefs.promptTemplate || null;
 
+  // ?api=... in the URL overrides any saved key — handy for sharing a single
+  // link that pre-fills the key. We strip the param afterwards so the key
+  // doesn't linger in browser history, bookmarks, or referer headers.
+  const urlKey = new URLSearchParams(location.search).get('api');
+  if (urlKey) {
+    els.apiKey.value = urlKey;
+    const url = new URL(location.href);
+    url.searchParams.delete('api');
+    history.replaceState(null, '', url.toString());
+    savePrefs();
+    log('info', 'API key loaded from URL and saved locally.');
+  }
+
   if (els.langSource.value === els.langTarget.value) {
     els.langTarget.value = els.langSource.value === 'en' ? 'es' : 'en';
   }
