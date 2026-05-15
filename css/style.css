@@ -322,7 +322,8 @@ a:hover { text-decoration: underline; }
   text-transform: uppercase; letter-spacing: 0.6px; color: var(--fg-2);
 }
 .input-row { display: flex; gap: 6px; align-items: stretch; }
-.input-row input { flex: 1; }
+.input-row input,
+.input-row select { flex: 1; min-width: 0; }
 input[type="text"], input[type="password"], select, textarea {
   background: var(--bg-3);
   border: 1px solid var(--line);

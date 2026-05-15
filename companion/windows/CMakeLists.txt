@@ -17,4 +17,5 @@ target_link_libraries(live-translator-companion PRIVATE
   ole32
   avrt
   bcrypt
+  mmdevapi   # ActivateAudioInterfaceAsync (process-loopback capture)
 )

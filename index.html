@@ -127,6 +127,18 @@
             </select>
             <p class="hint" id="audio-source-hint">Default microphone. Use "App audio" to translate a tab or window. Browser support varies.</p>
           </div>
+          <div class="field" id="companion-app-field" style="display:none">
+            <label for="companion-app">App to capture</label>
+            <div class="input-row">
+              <select id="companion-app">
+                <option value="">All system audio</option>
+              </select>
+              <button id="btn-refresh-apps" class="icon-btn small" type="button" aria-label="Refresh app list" title="Refresh app list">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              </button>
+            </div>
+            <p class="hint" id="companion-app-hint">Only apps currently making sound appear. Start playback in the app, then refresh.</p>
+          </div>
         </section>
 
         <section class="section">

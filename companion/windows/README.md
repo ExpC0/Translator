@@ -2,12 +2,18 @@
 
 Headless localhost audio bridge for browsers that cannot capture app audio.
 
-This MVP exposes:
+This service exposes:
 
 - `GET /status` on `http://127.0.0.1:52341/status`
-- `GET /audio` WebSocket on `ws://127.0.0.1:52341/audio`
+- `GET /apps` on `http://127.0.0.1:52341/apps` — JSON list of apps currently
+  playing audio (one entry per executable, lowest PID seen).
+- `GET /audio` WebSocket on `ws://127.0.0.1:52341/audio[?pid=N]`
+  - No `pid` → default render-device loopback (everything you hear).
+  - `pid=N`  → per-app loopback for that process **and its child processes**
+    (handy for Chrome/Edge/Discord/etc., which spawn many helpers).
 
-The WebSocket streams mono 16 kHz signed PCM16 frames, matching what the web app already sends to Gemini.
+The WebSocket streams mono 16 kHz signed PCM16 frames, matching what the web app
+already sends to Gemini.
 
 ## Build
 
@@ -31,9 +37,27 @@ With single-config generators such as Ninja/MinGW, the exe may be at:
 .\build\live-translator-companion.exe
 ```
 
-The binary is built as a Windows subsystem app, so it has no console window in normal use.
+The binary is built as a Windows-subsystem app, so it has no console window in
+normal use.
 
-## Origin Checks
+## Capture modes
+
+| URL                                  | Source                             |
+|--------------------------------------|------------------------------------|
+| `ws://127.0.0.1:52341/audio`         | Default render device loopback     |
+| `ws://127.0.0.1:52341/audio?pid=N`   | Process `N` and its descendants    |
+
+**Per-app capture requires Windows 10 build 20348 or newer (Windows 11
+recommended).** It uses `ActivateAudioInterfaceAsync` with
+`AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK` and
+`PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`, so picking the root PID is
+enough — child processes (e.g. each Chrome tab/renderer) are captured too.
+
+`/apps` enumerates the audio sessions on the default render device, groups them
+by executable name, and returns the lowest PID for each group. Apps that aren't
+actively playing audio won't appear; refresh after starting playback.
+
+## Origin checks
 
 By default the service allows common local development origins:
 
@@ -50,12 +74,8 @@ $env:LIVE_TRANSLATOR_ALLOWED_ORIGINS="https://your-real-domain.com,https://www.y
 .\build\Release\live-translator-companion.exe
 ```
 
-## Current Capture Mode
+## Wire format
 
-This MVP captures default render-device loopback, which means system output audio.
-
-Windows process-specific loopback is possible with `AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK`
-and `PROCESS_LOOPBACK_MODE_INCLUDE_TARGET_PROCESS_TREE`, but that needs a newer activation path
-than standard default-device WASAPI loopback. The browser integration is already designed so the
-native service can later swap system loopback for per-process loopback without changing the web app
-protocol.
+Each WebSocket message is one binary frame of raw 16-bit little-endian PCM,
+mono, 16 kHz, at most 100 ms per frame (1600 samples / 3200 bytes). Frames are
+back-to-back; the client can concatenate them into a continuous stream.

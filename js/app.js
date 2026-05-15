@@ -32,6 +32,10 @@ const els = {
   audioInputHint:$('audio-input-hint'),
   audioSource:   $('audio-source'),
   audioHint:     $('audio-source-hint'),
+  companionApp:      $('companion-app'),
+  companionAppField: $('companion-app-field'),
+  companionAppHint:  $('companion-app-hint'),
+  btnRefreshApps:    $('btn-refresh-apps'),
   audioOutput:   $('audio-output'),
   audioOutputHint:$('audio-output-hint'),
   modeSelect:    $('mode-select'),
@@ -78,6 +82,9 @@ const state = {
   liveTurn: null,
   systemPromptTemplate: null,
   companionAvailable: false,
+  // List of {pid, name, displayName} returned by the companion /apps endpoint.
+  // Refreshed when the companion service is detected or the user clicks ↻.
+  companionApps: [],
 };
 
 // ─── Prefs ────────────────────────────────────────────────────────────────────
@@ -98,6 +105,8 @@ function savePrefs() {
       mode:   els.modeSelect.value,
       dir:    els.dirSelect.value,
       promptTemplate: state.systemPromptTemplate || '',
+      // Persist the exe name, not the pid — pids change between runs.
+      companionApp: els.companionApp ? els.companionApp.value : '',
     }));
   } catch (_) {}
 }
@@ -172,6 +181,7 @@ function updateAudioSourceAvailability() {
   } else {
     els.audioHint.textContent = 'Default microphone. Use app/tab audio in Chrome/Edge, or Companion app audio when the local service is running.';
   }
+  updateCompanionAppVisibility();
 }
 
 async function detectCompanionService({ silent = true } = {}) {
@@ -189,7 +199,76 @@ async function detectCompanionService({ silent = true } = {}) {
     if (!silent) log('warn', 'Companion service unavailable: ' + (e && e.message ? e.message : e));
   }
   updateAudioSourceAvailability();
+  if (state.companionAvailable && els.companionApp) {
+    // Don't block detection on this; just trigger a background fetch.
+    refreshCompanionApps({ silent: true });
+  }
   return state.companionAvailable;
+}
+
+async function fetchCompanionApps() {
+  const res = await fetchWithTimeout(`${COMPANION_HTTP_URL}/apps`, {
+    mode: 'cors',
+    cache: 'no-store',
+    headers: { 'X-Live-Translator': 'apps' },
+  }, 1500);
+  if (!res.ok) throw new Error(`status ${res.status}`);
+  const data = await res.json();
+  return Array.isArray(data && data.apps) ? data.apps : [];
+}
+
+async function refreshCompanionApps({ silent = true } = {}) {
+  if (!els.companionApp) return;
+  try {
+    const apps = await fetchCompanionApps();
+    // Sort by display name (case-insensitive) for a stable, scannable list.
+    apps.sort((a, b) =>
+      (a.displayName || a.name || '').localeCompare(b.displayName || b.name || '', undefined, { sensitivity: 'base' })
+    );
+    state.companionApps = apps;
+
+    const preferred = els.companionApp.value ||
+                      els.companionApp.dataset.preferred || '';
+    const frag = document.createDocumentFragment();
+    const def = document.createElement('option');
+    def.value = '';
+    def.textContent = 'All system audio';
+    frag.appendChild(def);
+    for (const app of apps) {
+      const opt = document.createElement('option');
+      opt.value = app.name;
+      const display = app.displayName && app.displayName !== app.name
+        ? `${app.displayName} (${app.name})`
+        : app.name;
+      opt.textContent = display;
+      frag.appendChild(opt);
+    }
+    els.companionApp.innerHTML = '';
+    els.companionApp.appendChild(frag);
+
+    // Restore the user's previous selection if it's still present.
+    const stillThere = apps.some((a) => a.name === preferred);
+    els.companionApp.value = stillThere ? preferred : '';
+    els.companionApp.dataset.preferred = els.companionApp.value;
+
+    if (els.companionAppHint) {
+      els.companionAppHint.textContent = apps.length
+        ? 'Pick an app. Refresh ↻ after starting playback in a new app.'
+        : 'No app is making sound right now. Start playback, then refresh ↻.';
+    }
+    if (!silent) log('info', `Companion: found ${apps.length} app${apps.length === 1 ? '' : 's'} with active audio.`);
+  } catch (e) {
+    if (!silent) log('warn', 'Could not list companion apps: ' + (e && e.message ? e.message : e));
+    if (els.companionAppHint) {
+      els.companionAppHint.textContent = 'Could not reach the companion service.';
+    }
+  }
+}
+
+function updateCompanionAppVisibility() {
+  if (!els.companionAppField) return;
+  const show = els.audioSource.value === 'companion' && state.companionAvailable;
+  els.companionAppField.style.display = show ? '' : 'none';
 }
 
 function fillLanguages() {
@@ -214,6 +293,12 @@ function fillLanguages() {
   els.audioSource.value = prefs.audio  || 'mic';
   els.audioOutput.dataset.preferred = prefs.output || '';
   els.audioOutput.value = prefs.output || '';
+  if (els.companionApp) {
+    // Stash the saved exe name; refreshCompanionApps() picks it up once the
+    // /apps response comes in.
+    els.companionApp.dataset.preferred = prefs.companionApp || '';
+    els.companionApp.value = prefs.companionApp || '';
+  }
   els.modeSelect.value  = prefs.mode   || 'audio';
   els.dirSelect.value   = prefs.dir    || 'bidir';
   state.systemPromptTemplate = prefs.promptTemplate || null;
@@ -676,8 +761,19 @@ async function startPipeline() {
       if (!state.companionAvailable && !(await detectCompanionService({ silent: false }))) {
         throw new Error('Companion audio service is not running.');
       }
+      // Refresh the app list right before connecting so the pid we send is
+      // still valid (the user may have closed the app since the last refresh).
+      const selectedExe = els.companionApp ? els.companionApp.value : '';
+      let pid = 0;
+      if (selectedExe) {
+        try { await refreshCompanionApps({ silent: true }); } catch (_) {}
+        const match = state.companionApps.find((a) => a.name === selectedExe);
+        if (match) pid = match.pid;
+        else throw new Error(`"${selectedExe}" is no longer making sound. Start playback in it and try again.`);
+      }
+      const wsUrl = pid ? `${COMPANION_WS_URL}?pid=${pid}` : COMPANION_WS_URL;
       state.capture = createCompanionCapture();
-      await state.capture.start({ wsUrl: COMPANION_WS_URL });
+      await state.capture.start({ wsUrl });
     } else {
       state.capture = createAudioCapture();
       await state.capture.start({ mode: audioMode, micDeviceId: els.audioInput.value });
@@ -685,7 +781,13 @@ async function startPipeline() {
     state.currentAudioMode = audioMode;
     await refreshAudioInputDevices();
     await refreshAudioOutputDevices();
-    log('info', 'Audio source: ' + ({mic:'microphone', display:'browser app audio', companion:'companion app audio', both:'mic + app audio'}[audioMode] || audioMode));
+    const sourceLabels = {mic:'microphone', display:'browser app audio', companion:'companion app audio', both:'mic + app audio'};
+    let sourceLog = sourceLabels[audioMode] || audioMode;
+    if (audioMode === 'companion' && els.companionApp && els.companionApp.value) {
+      const opt = els.companionApp.selectedOptions[0];
+      sourceLog = `companion app audio (${opt ? opt.textContent : els.companionApp.value})`;
+    }
+    log('info', 'Audio source: ' + sourceLog);
   } catch (e) {
     log('error', 'Audio error: ' + (e && e.message ? e.message : e));
     await stopPipeline();
@@ -1033,8 +1135,18 @@ function wireUI() {
   });
   els.audioSource.addEventListener('change', () => {
     if (els.audioSource.value === 'companion') detectCompanionService({ silent: false });
+    updateCompanionAppVisibility();
     savePrefs();
   });
+  if (els.companionApp) {
+    els.companionApp.addEventListener('change', () => {
+      els.companionApp.dataset.preferred = els.companionApp.value;
+      savePrefs();
+    });
+  }
+  if (els.btnRefreshApps) {
+    els.btnRefreshApps.addEventListener('click', () => refreshCompanionApps({ silent: false }));
+  }
   for (const sel of [els.langSource, els.langTarget, els.voice, els.dirSelect]) {
     sel.addEventListener('change', savePrefs);
   }
