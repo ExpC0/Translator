@@ -17,6 +17,16 @@ const LANGUAGES = [
 const MAX_TURNS = 50;
 const MAX_LOG = 200;
 const STORAGE_KEY = 'live-translator-prefs';
+
+// Voice-activity-detection presets. Hand-tuned for translation use: the model
+// shouldn't jump in mid-sentence, so we lean towards LOW end-sensitivity and
+// longer silence by default. "Patient" is the answer to "model talks too soon".
+const VAD_PRESETS = {
+  quick:    { startSensitivity: 'HIGH', endSensitivity: 'HIGH', prefixPaddingMs: 100, silenceDurationMs: 400 },
+  balanced: { startSensitivity: 'HIGH', endSensitivity: 'LOW',  prefixPaddingMs: 200, silenceDurationMs: 800 },
+  patient:  { startSensitivity: 'LOW',  endSensitivity: 'LOW',  prefixPaddingMs: 300, silenceDurationMs: 1800 },
+};
+const DEFAULT_VAD_PRESET = 'balanced';
 const COMPANION_HTTP_URL = 'http://127.0.0.1:52341';
 const COMPANION_WS_URL = 'ws://127.0.0.1:52341/audio';
 
@@ -41,6 +51,11 @@ const els = {
   modeSelect:    $('mode-select'),
   dirSelect:     $('dir-select'),
   dirField:      $('dir-field'),
+  vadPreset:     $('vad-preset'),
+  vadStart:      $('vad-start'),
+  vadEnd:        $('vad-end'),
+  vadPrefix:     $('vad-prefix'),
+  vadSilence:    $('vad-silence'),
   btnSwap:       $('btn-swap'),
   btnStart:      $('btn-start'),
   btnStop:       $('btn-stop'),
@@ -107,6 +122,11 @@ function savePrefs() {
       promptTemplate: state.systemPromptTemplate || '',
       // Persist the exe name, not the pid — pids change between runs.
       companionApp: els.companionApp ? els.companionApp.value : '',
+      vadPreset:   els.vadPreset ? els.vadPreset.value : DEFAULT_VAD_PRESET,
+      vadStart:    els.vadStart ? els.vadStart.value : '',
+      vadEnd:      els.vadEnd ? els.vadEnd.value : '',
+      vadPrefix:   els.vadPrefix ? Number(els.vadPrefix.value) : null,
+      vadSilence:  els.vadSilence ? Number(els.vadSilence.value) : null,
     }));
   } catch (_) {}
 }
@@ -148,6 +168,48 @@ function modeDescriptiveLabel() {
 
 function updateDirVisibility() {
   els.dirField.style.display = els.modeSelect.value === 'transcribe' ? 'none' : '';
+}
+
+// ─── VAD preset / advanced fields ────────────────────────────────────────────
+// The preset dropdown drives the 4 detail fields. Touching any detail field
+// flips the preset to "custom" so the user sees that they've deviated. On
+// Start we read whatever the detail fields say — preset is just a shortcut.
+function applyVadPreset(name) {
+  const preset = VAD_PRESETS[name];
+  if (!preset) return;
+  els.vadStart.value = preset.startSensitivity;
+  els.vadEnd.value = preset.endSensitivity;
+  els.vadPrefix.value = String(preset.prefixPaddingMs);
+  els.vadSilence.value = String(preset.silenceDurationMs);
+}
+
+function currentVadConfig() {
+  // Clamp into a sensible range so a typo doesn't break the session.
+  const prefix = Math.max(0, Math.min(2000, Number(els.vadPrefix.value) || 0));
+  const silence = Math.max(100, Math.min(5000, Number(els.vadSilence.value) || 800));
+  return {
+    startSensitivity: els.vadStart.value === 'LOW' ? 'LOW' : 'HIGH',
+    endSensitivity:   els.vadEnd.value === 'HIGH' ? 'HIGH' : 'LOW',
+    prefixPaddingMs:   prefix,
+    silenceDurationMs: silence,
+  };
+}
+
+function vadConfigMatchesPreset(name) {
+  const preset = VAD_PRESETS[name];
+  if (!preset) return false;
+  const cur = currentVadConfig();
+  return cur.startSensitivity === preset.startSensitivity &&
+         cur.endSensitivity === preset.endSensitivity &&
+         cur.prefixPaddingMs === preset.prefixPaddingMs &&
+         cur.silenceDurationMs === preset.silenceDurationMs;
+}
+
+function detectVadPreset() {
+  for (const name of Object.keys(VAD_PRESETS)) {
+    if (vadConfigMatchesPreset(name)) return name;
+  }
+  return 'custom';
 }
 
 async function fetchWithTimeout(url, options = {}, timeoutMs = 500) {
@@ -298,6 +360,21 @@ function fillLanguages() {
     // /apps response comes in.
     els.companionApp.dataset.preferred = prefs.companionApp || '';
     els.companionApp.value = prefs.companionApp || '';
+  }
+
+  // VAD: load preset first, then let any saved detail values override it. If
+  // the result no longer matches a named preset, switch the dropdown to
+  // "custom" so the UI reflects reality.
+  const savedPreset = prefs.vadPreset && (VAD_PRESETS[prefs.vadPreset] || prefs.vadPreset === 'custom')
+    ? prefs.vadPreset : DEFAULT_VAD_PRESET;
+  els.vadPreset.value = savedPreset;
+  applyVadPreset(savedPreset === 'custom' ? DEFAULT_VAD_PRESET : savedPreset);
+  if (prefs.vadStart === 'HIGH' || prefs.vadStart === 'LOW') els.vadStart.value = prefs.vadStart;
+  if (prefs.vadEnd === 'HIGH' || prefs.vadEnd === 'LOW')     els.vadEnd.value   = prefs.vadEnd;
+  if (Number.isFinite(prefs.vadPrefix))  els.vadPrefix.value = String(prefs.vadPrefix);
+  if (Number.isFinite(prefs.vadSilence)) els.vadSilence.value = String(prefs.vadSilence);
+  if (savedPreset !== 'custom') {
+    els.vadPreset.value = vadConfigMatchesPreset(savedPreset) ? savedPreset : 'custom';
   }
   els.modeSelect.value  = prefs.mode   || 'audio';
   els.dirSelect.value   = prefs.dir    || 'bidir';
@@ -735,6 +812,7 @@ async function startPipeline() {
     apiKey,
     voice: els.voice.value,
     systemInstruction,
+    vad: currentVadConfig(),
     // outputAudioTranscription is needed for both audio and text modes:
     // audio mode — show the translation text alongside the spoken audio
     // text mode  — the ONLY way to get text output (native audio model doesn't support TEXT modality)
@@ -846,6 +924,11 @@ function setControlsLocked(locked) {
   els.btnSwap.disabled       = locked;
   els.modeSelect.disabled    = locked;
   els.dirSelect.disabled     = locked;
+  els.vadPreset.disabled     = locked;
+  els.vadStart.disabled      = locked;
+  els.vadEnd.disabled        = locked;
+  els.vadPrefix.disabled     = locked;
+  els.vadSilence.disabled    = locked;
 }
 
 function togglePause() {
@@ -1133,6 +1216,16 @@ function wireUI() {
     updateDirVisibility();
     savePrefs();
   });
+  els.vadPreset.addEventListener('change', () => {
+    if (els.vadPreset.value !== 'custom') applyVadPreset(els.vadPreset.value);
+    savePrefs();
+  });
+  for (const el of [els.vadStart, els.vadEnd, els.vadPrefix, els.vadSilence]) {
+    el.addEventListener('change', () => {
+      els.vadPreset.value = detectVadPreset();
+      savePrefs();
+    });
+  }
   els.audioSource.addEventListener('change', () => {
     if (els.audioSource.value === 'companion') detectCompanionService({ silent: false });
     updateCompanionAppVisibility();

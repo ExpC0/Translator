@@ -73,6 +73,7 @@ class GeminiLiveClient {
     this.voice = opts.voice || 'Zephyr';
     this.systemInstruction = opts.systemInstruction || '';
     this.useOutputTranscription = opts.useOutputTranscription !== false;
+    this.vad = opts.vad || null;  // { startSensitivity, endSensitivity, prefixPaddingMs, silenceDurationMs }
 
     this.onAudio = opts.onAudio || (() => {});
     this.onInputChunk = opts.onInputChunk || (() => {});
@@ -157,10 +158,10 @@ class GeminiLiveClient {
         inputAudioTranscription: {},
         realtimeInputConfig: {
           automaticActivityDetection: {
-            startOfSpeechSensitivity: 'START_SENSITIVITY_HIGH',
-            endOfSpeechSensitivity: 'END_SENSITIVITY_LOW',
-            prefixPaddingMs: 200,
-            silenceDurationMs: 800,
+            startOfSpeechSensitivity: `START_SENSITIVITY_${(this.vad && this.vad.startSensitivity) || 'HIGH'}`,
+            endOfSpeechSensitivity:   `END_SENSITIVITY_${(this.vad && this.vad.endSensitivity) || 'LOW'}`,
+            prefixPaddingMs:   this.vad && Number.isFinite(this.vad.prefixPaddingMs)   ? this.vad.prefixPaddingMs   : 200,
+            silenceDurationMs: this.vad && Number.isFinite(this.vad.silenceDurationMs) ? this.vad.silenceDurationMs : 800,
           },
           activityHandling: 'NO_INTERRUPTION',
         },
