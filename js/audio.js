@@ -12,7 +12,11 @@ class PCM16Processor extends AudioWorkletProcessor {
     this._out = new Float32Array(this._target);
     this._oIdx = 0;
     this._peak = 0;
-    this._levelTick = 0;
+    // Emit a level message every ~100 ms of input audio regardless of the
+    // context sample rate or render quantum size, so the visualizer cadence
+    // is consistent across devices.
+    this._levelSamples = 0;
+    this._levelInterval = (sampleRate * 0.1) | 0;
   }
   process(inputs) {
     const input = inputs[0];
@@ -62,9 +66,10 @@ class PCM16Processor extends AudioWorkletProcessor {
     this._inPos = p;
     this._oIdx = o;
 
-    if (++this._levelTick >= 25) {
+    this._levelSamples += N;
+    if (this._levelSamples >= this._levelInterval) {
       this.port.postMessage({ type: 'level', level: peak });
-      this._levelTick = 0;
+      this._levelSamples = 0;
       peak = 0;
     }
     this._peak = peak;
@@ -84,6 +89,8 @@ class AudioCapture {
     this.sources = [];
     this.node = null;
     this._workletUrl = null;
+    this._level = 0;
+    this._rafId = 0;
   }
 
   // mode: 'mic' | 'display' | 'both'
@@ -155,7 +162,9 @@ class AudioCapture {
     this.node.port.onmessage = (ev) => {
       const m = ev.data;
       if (m.type === 'audio') this.onChunk(m.buffer);
-      else if (m.type === 'level') this.onLevel(m.level);
+      else if (m.type === 'level') {
+        if (m.level > this._level) this._level = m.level;
+      }
     };
 
     // Connect every input stream to the same worklet — Web Audio sums them.
@@ -165,6 +174,28 @@ class AudioCapture {
       this.sources.push(src);
     }
     // Worklet output isn't connected to destination — no monitor playback.
+
+    this._startMeter();
+  }
+
+  _startMeter() {
+    if (this._rafId) return;
+    let last = performance.now();
+    const decayTau = 0.1;
+    const tick = () => {
+      const now = performance.now();
+      const dt = Math.max(0, (now - last) / 1000);
+      last = now;
+      this._level *= Math.exp(-dt / decayTau);
+      this.onLevel(this._level);
+      if (this.node) {
+        this._rafId = requestAnimationFrame(tick);
+      } else {
+        this._rafId = 0;
+        this.onLevel(0);
+      }
+    };
+    this._rafId = requestAnimationFrame(tick);
   }
 
   _releaseStreams() {
@@ -183,6 +214,10 @@ class AudioCapture {
       URL.revokeObjectURL(this._workletUrl);
       this._workletUrl = null;
     }
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+    this._rafId = 0;
+    this._level = 0;
+    this.onLevel(0);
     this.sources = [];
     this.node = null;
     this.ctx = null;
@@ -239,8 +274,15 @@ class CompanionAudioCapture {
 
   _startMeter() {
     if (this._rafId) return;
+    let last = performance.now();
+    // 100 ms time constant — reproduces the old *0.85/frame feel at 60 Hz
+    // but is independent of the display refresh rate.
+    const decayTau = 0.1;
     const tick = () => {
-      this._level *= 0.85;
+      const now = performance.now();
+      const dt = Math.max(0, (now - last) / 1000);
+      last = now;
+      this._level *= Math.exp(-dt / decayTau);
       this.onLevel(this._level);
       if (this.ws) {
         this._rafId = requestAnimationFrame(tick);
@@ -273,6 +315,8 @@ class TTSPlayer {
     this.outputNode = null;
     this.outputStreamNode = null;
     this.outputEl = null;
+    this.analyser = null;
+    this._analyserBuf = null;
     this.nextStart = 0;
     this.sources = new Set();
     this._level = 0;
@@ -290,6 +334,7 @@ class TTSPlayer {
   async _configureOutput() {
     if (!this.ctx) return;
 
+    let sink;
     if (typeof this.ctx.setSinkId === 'function') {
       try {
         await this.ctx.setSinkId(this.outputDeviceId || '');
@@ -298,11 +343,8 @@ class TTSPlayer {
         this.outputDeviceId = '';
         await this.ctx.setSinkId('');
       }
-      this.outputNode = this.ctx.destination;
-      return;
-    }
-
-    if (TTSPlayer.canSelectOutputDevice()) {
+      sink = this.ctx.destination;
+    } else if (TTSPlayer.canSelectOutputDevice()) {
       this.outputStreamNode = this.ctx.createMediaStreamDestination();
       this.outputEl = new Audio();
       this.outputEl.autoplay = true;
@@ -316,11 +358,21 @@ class TTSPlayer {
         await this.outputEl.setSinkId('');
       }
       try { await this.outputEl.play(); } catch (_) {}
-      this.outputNode = this.outputStreamNode;
-      return;
+      sink = this.outputStreamNode;
+    } else {
+      sink = this.ctx.destination;
     }
 
-    this.outputNode = this.ctx.destination;
+    // Sources feed an analyser so the meter reflects what is actually playing
+    // out the speakers, not what we have queued. Without this, the level
+    // decays to zero as soon as the model finishes streaming chunks, even
+    // though several seconds of audio may still be buffered.
+    this.analyser = this.ctx.createAnalyser();
+    this.analyser.fftSize = 1024;
+    this.analyser.smoothingTimeConstant = 0;
+    this.analyser.connect(sink);
+    this._analyserBuf = new Float32Array(this.analyser.fftSize);
+    this.outputNode = this.analyser;
   }
 
   async setOutputDevice(deviceId) {
@@ -330,7 +382,6 @@ class TTSPlayer {
 
     if (typeof this.ctx.setSinkId === 'function') {
       await this.ctx.setSinkId(this.outputDeviceId);
-      this.outputNode = this.ctx.destination;
       return;
     }
 
@@ -350,14 +401,9 @@ class TTSPlayer {
     const pcm = new Int16Array(bytes.buffer, bytes.byteOffset, usable / 2);
 
     const float = new Float32Array(pcm.length);
-    let peak = 0;
     for (let i = 0; i < pcm.length; i++) {
-      const f = pcm[i] / 32768;
-      float[i] = f;
-      const a = f < 0 ? -f : f;
-      if (a > peak) peak = a;
+      float[i] = pcm[i] / 32768;
     }
-    if (peak > this._level) this._level = peak;
 
     const buf = this.ctx.createBuffer(1, float.length, 24000);
     buf.copyToChannel(float, 0);
@@ -385,10 +431,30 @@ class TTSPlayer {
 
   _startMeter() {
     if (this._rafId) return;
+    let last = performance.now();
+    const decayTau = 0.1;
     const tick = () => {
-      this._level *= 0.85;
+      const now = performance.now();
+      const dt = Math.max(0, (now - last) / 1000);
+      last = now;
+
+      // Sample the actual output, not the queued chunks.
+      let peak = 0;
+      if (this.analyser && this._analyserBuf) {
+        this.analyser.getFloatTimeDomainData(this._analyserBuf);
+        const buf = this._analyserBuf;
+        for (let i = 0; i < buf.length; i++) {
+          const a = buf[i] < 0 ? -buf[i] : buf[i];
+          if (a > peak) peak = a;
+        }
+      }
+
+      if (peak > this._level) this._level = peak;
+      else this._level *= Math.exp(-dt / decayTau);
+
       this.onLevel(this._level);
-      if (this.sources.size > 0 || this._level > 0.01) {
+      // Keep ticking while audio is scheduled OR still ringing out in the meter.
+      if (this.sources.size > 0 || this._level > 0.005) {
         this._rafId = requestAnimationFrame(tick);
       } else {
         this._rafId = 0;
@@ -420,11 +486,14 @@ class TTSPlayer {
       try { this.outputEl.pause(); } catch (_) {}
       this.outputEl.srcObject = null;
     }
+    try { this.analyser && this.analyser.disconnect(); } catch (_) {}
     try { this.outputStreamNode && this.outputStreamNode.disconnect(); } catch (_) {}
     try { this.ctx && this.ctx.close(); } catch (_) {}
     this.outputEl = null;
     this.outputStreamNode = null;
     this.outputNode = null;
+    this.analyser = null;
+    this._analyserBuf = null;
     this.ctx = null;
   }
 
