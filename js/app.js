@@ -12,6 +12,7 @@ const LANGUAGES = [
   ['ar', 'Arabic'],
   ['hi', 'Hindi'],
   ['pt', 'Portuguese'],
+  ['id', 'Indonesian'],
 ];
 
 const MAX_TURNS = 50;
